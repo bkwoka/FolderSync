@@ -17,8 +17,9 @@ namespace FolderSync.Services.SyncStages;
 /// back into the main target folder on the same drive.
 /// </summary>
 /// <param name="rclone">Service for executing Rclone commands.</param>
+/// <param name="googleApi">Service for direct Google Drive API interactions.</param>
 /// <param name="localizer">Service for localized string retrieval.</param>
-public class SyncConsolidateStage(IRcloneService rclone, ITranslationService localizer) : ISyncConsolidateStage
+public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService googleApi, ITranslationService localizer) : ISyncConsolidateStage
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -124,8 +125,20 @@ public class SyncConsolidateStage(IRcloneService rclone, ITranslationService loc
                 }
             }
             
-            Logger.Info("Consolidation complete. Purging orphan folder {DirId}.", dir.Id);
-            await rclone.ExecuteCommandAsync(new[] { "purge", sourcePath }, null, cancellationToken);
+            // REMEDIATION: Replace Rclone Purge with a direct API call to ensure safe deletion of owned resources.
+            Logger.Info("Consolidation complete. Attempting to securely remove orphaned folder {0} via REST API.", dir.Id);
+            
+            bool deleted = await googleApi.DeleteFolderIfOwnedAsync(remote.RcloneRemote, dir.Id, cancellationToken);
+            
+            if (deleted)
+            {
+                Logger.Info("Orphaned folder {0} was successfully removed from the cloud.", dir.Id);
+            }
+            else
+            {
+                Logger.Warn("Orphaned folder {0} was not removed (ownership mismatch or API error).", dir.Id);
+            }
+
             uiLogger.Report(new SyncProgressEvent(moveId, "", true));
         }
     }

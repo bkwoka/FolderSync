@@ -31,4 +31,14 @@ public interface IGoogleDriveApiService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The ID of the best matching folder, or null if not found.</returns>
     Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Securely deletes a folder or file only if it is owned by the current user.
+    /// This prevents the accidental deletion of shared folders within the MESH network.
+    /// </summary>
+    /// <param name="rcloneRemote">The Rclone remote name to use for authentication.</param>
+    /// <param name="folderId">The Google Drive ID of the folder to delete.</param>
+    /// <param name="cancellationToken">Token for operation cancellation.</param>
+    /// <returns>True if the folder was owned and successfully deleted; otherwise, false.</returns>
+    Task<bool> DeleteFolderIfOwnedAsync(string rcloneRemote, string folderId, CancellationToken cancellationToken = default);
 }

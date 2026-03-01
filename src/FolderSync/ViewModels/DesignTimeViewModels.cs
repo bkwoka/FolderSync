@@ -32,7 +32,7 @@ public static class DesignTimeViewModels
         var localizer = TranslationService.Instance;
 
         var dummySanitize = new SyncSanitizeStage(dummyRclone, localizer);
-        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, localizer);
+        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, dummyGoogleApi, localizer);
         var dummyCrossAccount = new SyncCrossAccountStage(dummyRclone, localizer);
         var dummySync = new SyncEngine(dummySanitize, dummyConsolidate, dummyCrossAccount, localizer);
 
@@ -215,6 +215,9 @@ public static class DesignTimeViewModels
 
         public Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson,
             CancellationToken cancellationToken = default) => Task.FromResult<string?>("detected_folder_id_xyz");
+
+        public Task<bool> DeleteFolderIfOwnedAsync(string rcloneRemote, string folderId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 
     private class DummyMeshPermissionService : IMeshPermissionService

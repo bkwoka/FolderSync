@@ -357,8 +357,59 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
         }
         catch (Exception ex)
         {
-            Logger.Debug(ex, "File counting failed for folder {0}.", folderId);
+            Logger.Warn(ex, "File counting failed for folder {0}.", folderId);
             return 0;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteFolderIfOwnedAsync(string rcloneRemote, string folderId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string accessToken = await rcloneService.GetAccessTokenAsync(rcloneRemote, cancellationToken);
+            using var client = httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            // Step 1: Verify resource ownership
+            // We only request the 'ownedByMe' field to optimize performance and reduce data overhead.
+            string metaUrl = $"https://www.googleapis.com/drive/v3/files/{folderId}?fields=ownedByMe";
+            var metaResponse = await client.GetAsync(metaUrl, cancellationToken);
+            
+            if (!metaResponse.IsSuccessStatusCode)
+            {
+                Logger.Warn("Unable to verify ownership for folder {0}. Status Code: {1}", folderId, metaResponse.StatusCode);
+                return false;
+            }
+
+            string json = await metaResponse.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            
+            bool isOwner = doc.RootElement.TryGetProperty("ownedByMe", out var ownedProp) && ownedProp.GetBoolean();
+
+            if (!isOwner)
+            {
+                // To maintain the integrity of the MESH, we must never delete folders shared by other accounts.
+                Logger.Info("Folder {0} is a shared resource. Skipping physical deletion.", folderId);
+                return false;
+            }
+
+            // Step 2: Physical resource removal
+            // Permanent deletion is used to prune orphaned technical structures that are no longer part of the mesh.
+            Logger.Info("Initiating permanent deletion of orphaned owned folder: {0}", folderId);
+            string deleteUrl = $"https://www.googleapis.com/drive/v3/files/{folderId}";
+            var deleteResponse = await client.DeleteAsync(deleteUrl, cancellationToken);
+
+            return deleteResponse.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "An error occurred during Google Drive folder deletion: {0}", folderId);
+            return false;
         }
     }
 }
