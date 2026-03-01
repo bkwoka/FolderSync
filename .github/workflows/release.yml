@@ -41,8 +41,24 @@ jobs:
         run: dotnet test tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release
         
       - name: Publish App
-        # Single-file publish; creates a self-contained runtime environment for the end-user.
-        run: dotnet publish src/FolderSync/FolderSync.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish_output
+        # Dynamically extract version number from git tag (stripping 'v' prefix) 
+        # to ensure binaries are built with correct metadata.
+        shell: bash
+        run: |
+          CLEAN_VERSION=${GITHUB_REF_NAME#v}
+          echo "Building version: $CLEAN_VERSION"
+          
+          dotnet publish src/FolderSync/FolderSync.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:Version=$CLEAN_VERSION \
+            -p:AssemblyVersion=$CLEAN_VERSION \
+            -p:FileVersion=$CLEAN_VERSION \
+            -p:InformationalVersion=$CLEAN_VERSION \
+            -o ./publish_output
 
       - name: Archive Files (Windows)
         if: matrix.os == 'windows-latest'
