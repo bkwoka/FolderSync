@@ -248,8 +248,7 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
     }
 
     /// <inheritdoc />
-    public async Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson,
-        CancellationToken cancellationToken = default)
+    public async Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -265,10 +264,13 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-            // Search for folders with the target name that are not in the trash.
+            // Restrict the search to folders owned by the current user.
+            // This prevents the application from incorrectly identifying folders shared by other accounts
+            // (e.g., from an existing mesh) and ensures proper data isolation during initial setup.
             string query =
                 Uri.EscapeDataString(
-                    $"name='{AppConstants.TargetFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+                    $"name='{AppConstants.TargetFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false and 'me' in owners");
+            
             string searchUrl =
                 $"https://www.googleapis.com/drive/v3/files?q={query}&fields=files(id,createdTime)&orderBy=createdTime desc";
 
@@ -287,12 +289,13 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
 
             if (count == 1)
             {
-                // Exactly one match found - ideal candidate.
+                // Found exactly one OWNED folder - this is the most likely candidate.
                 return filesArray[0].GetProperty("id").GetString();
             }
 
-            // Multiple candidates found; inspect the top 5 newest for .prompt file presence using a Scatter-Gather pattern.
-            Logger.Info("Found {0} folders named '{1}'. Inspecting up to 5 newest for data presence...", count,
+            // When multiple owned folders exist, we evaluate the most recent candidates
+            // to identify the primary working directory based on the presence of application-specific data.
+            Logger.Info("Found {0} owned folders named '{1}'. Inspecting up to 5 newest for data presence...", count,
                 AppConstants.TargetFolderName);
 
             var topFolders = new System.Collections.Generic.List<string>();
@@ -303,6 +306,7 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
                 if (!string.IsNullOrEmpty(id)) topFolders.Add(id);
             }
 
+            // Scatter-Gather pattern: concurrently scan detected folders for content depth.
             var inspectionTasks = topFolders.Select(async folderId =>
             {
                 int fileCount = await CountPromptFilesInFolderAsync(client, folderId, cancellationToken);
@@ -314,7 +318,7 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
             // Select the folder with the highest number of conversation files.
             var bestFolder = results.OrderByDescending(r => r.Count).First();
 
-            Logger.Info("Auto-detect selected folder {0} containing {1} prompt files.", bestFolder.FolderId,
+            Logger.Info("Auto-detect selected owned folder {0} containing {1} prompt files.", bestFolder.FolderId,
                 bestFolder.Count);
             return bestFolder.FolderId;
         }
