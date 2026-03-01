@@ -22,4 +22,13 @@ public interface IGoogleDriveApiService
 
     Task<bool> VerifyFolderExistsAsync(string tokenJson, string folderId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attempts to automatically detect the folder ID for the "Google AI Studio" folder 
+    /// by searching the drive and inspecting candidates for .prompt files.
+    /// </summary>
+    /// <param name="tokenJson">OAuth token JSON string.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The ID of the best matching folder, or null if not found.</returns>
+    Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson, CancellationToken cancellationToken = default);
 }

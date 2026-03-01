@@ -142,4 +142,11 @@ public class DriveOrchestratorService(
         var corrupted = config.Remotes.Where(r => !actualRcloneRemotes.Contains(r.RcloneRemote)).ToList();
         return (config, corrupted);
     }
+
+    /// <inheritdoc />
+    public Task<string?> AutoDetectFolderIdAsync(string token, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
+        return googleApi.AutoDetectGoogleAiStudioFolderIdAsync(token, cancellationToken);
+    }
 }

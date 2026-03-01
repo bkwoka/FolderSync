@@ -56,6 +56,11 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _isDeleteModalVisible;
     [ObservableProperty] private bool _isVerifyingFolder;
 
+    /// <summary>
+    /// Indicates whether the system is currently scanning Google Drive for an existing "Google AI Studio" folder.
+    /// </summary>
+    [ObservableProperty] private bool _isAutoDetectingFolder;
+
     [ObservableProperty] private bool _isIntegrityModalVisible;
 
     /// <summary>
@@ -242,6 +247,9 @@ public partial class SettingsViewModel : ViewModelBase
 
             IsOauthModalVisible = false;
             IsConfigModalVisible = true;
+
+            // Trigger background scanning for existing folders to streamline the setup process.
+            _ = PerformAutoDetectionAsync(_pendingToken);
         }
         catch (OperationCanceledException)
         {
@@ -259,6 +267,30 @@ public partial class SettingsViewModel : ViewModelBase
             if (_oauthCts != null && !_oauthCts.IsCancellationRequested) _oauthCts.Cancel();
             _oauthCts?.Dispose();
             _oauthCts = null;
+        }
+    }
+
+    /// <summary>
+    /// Conducts a background search for the "Google AI Studio" folder and automatically populates the folder ID if found.
+    /// </summary>
+    private async Task PerformAutoDetectionAsync(string token)
+    {
+        IsAutoDetectingFolder = true;
+        try
+        {
+            string? detectedId = await _driveOrchestrator.AutoDetectFolderIdAsync(token);
+            if (!string.IsNullOrWhiteSpace(detectedId))
+            {
+                PendingFolderId = detectedId;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, "Background auto-detection failed.");
+        }
+        finally
+        {
+            IsAutoDetectingFolder = false;
         }
     }
 

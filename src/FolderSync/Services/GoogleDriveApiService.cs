@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FolderSync.Services.Interfaces;
 using NLog;
+using System.Linq;
 
 namespace FolderSync.Services;
 
@@ -243,6 +244,117 @@ public class GoogleDriveApiService(IRcloneService rcloneService, IHttpClientFact
 
             string error = await response.Content.ReadAsStringAsync(cancellationToken);
             throw new HttpRequestException($"Drive API Error ({response.StatusCode}): {error}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var tokenDoc = JsonDocument.Parse(tokenJson);
+            if (!tokenDoc.RootElement.TryGetProperty("access_token", out var accessTokenProp) ||
+                string.IsNullOrWhiteSpace(accessTokenProp.GetString()))
+            {
+                return null;
+            }
+
+            string accessToken = accessTokenProp.GetString()!;
+
+            using var client = httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            // Search for folders with the target name that are not in the trash.
+            string query =
+                Uri.EscapeDataString(
+                    $"name='{AppConstants.TargetFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+            string searchUrl =
+                $"https://www.googleapis.com/drive/v3/files?q={query}&fields=files(id,createdTime)&orderBy=createdTime desc";
+
+            var response = await client.GetAsync(searchUrl, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("files", out var filesArray) || filesArray.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            int count = filesArray.GetArrayLength();
+
+            if (count == 1)
+            {
+                // Exactly one match found - ideal candidate.
+                return filesArray[0].GetProperty("id").GetString();
+            }
+
+            // Multiple candidates found; inspect the top 5 newest for .prompt file presence using a Scatter-Gather pattern.
+            Logger.Info("Found {0} folders named '{1}'. Inspecting up to 5 newest for data presence...", count,
+                AppConstants.TargetFolderName);
+
+            var topFolders = new System.Collections.Generic.List<string>();
+            int limit = Math.Min(5, count);
+            for (int i = 0; i < limit; i++)
+            {
+                var id = filesArray[i].GetProperty("id").GetString();
+                if (!string.IsNullOrEmpty(id)) topFolders.Add(id);
+            }
+
+            var inspectionTasks = topFolders.Select(async folderId =>
+            {
+                int fileCount = await CountPromptFilesInFolderAsync(client, folderId, cancellationToken);
+                return (FolderId: folderId, Count: fileCount);
+            });
+
+            var results = await Task.WhenAll(inspectionTasks);
+
+            // Select the folder with the highest number of conversation files.
+            var bestFolder = results.OrderByDescending(r => r.Count).First();
+
+            Logger.Info("Auto-detect selected folder {0} containing {1} prompt files.", bestFolder.FolderId,
+                bestFolder.Count);
+            return bestFolder.FolderId;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, "Automatic detection of the 'Google AI Studio' folder failed. Falling back to manual entry.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Executes a server-side query to count .prompt files within a specific folder.
+    /// </summary>
+    private async Task<int> CountPromptFilesInFolderAsync(HttpClient client, string folderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            string query =
+                Uri.EscapeDataString(
+                    $"'{folderId}' in parents and mimeType='{AppConstants.AiStudioMimeType}' and trashed=false");
+            string countUrl = $"https://www.googleapis.com/drive/v3/files?q={query}&fields=files(id)&pageSize=1000";
+
+            var response = await client.GetAsync(countUrl, cancellationToken);
+            if (!response.IsSuccessStatusCode) return 0;
+
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+
+            if (doc.RootElement.TryGetProperty("files", out var filesArray))
+            {
+                return filesArray.GetArrayLength();
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Debug(ex, "File counting failed for folder {0}.", folderId);
+            return 0;
         }
     }
 }

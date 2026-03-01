@@ -212,6 +212,9 @@ public static class DesignTimeViewModels
 
         public Task<bool> VerifyFolderExistsAsync(string tokenJson, string folderId,
             CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<string?> AutoDetectGoogleAiStudioFolderIdAsync(string tokenJson,
+            CancellationToken cancellationToken = default) => Task.FromResult<string?>("detected_folder_id_xyz");
     }
 
     private class DummyMeshPermissionService : IMeshPermissionService

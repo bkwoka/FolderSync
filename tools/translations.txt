@@ -1,13 +1,2 @@
 Key | English | Polish
-Log_Header_Prep | Prepare folders | Przygotowanie folderów
-UpdateModal_Title | Update Available | Dostępna aktualizacja
-UpdateModal_Desc | A new version of the application is available on GitHub. Do you want to open the download page? | Nowa wersja aplikacji jest dostępna na GitHub. Czy chcesz otworzyć stronę pobierania w przeglądarce?
-Log_Header_Sync | Updating conversations across accounts | Aktualizacja rozmów między kontami
-Log_Stage2_Aggregate | Aggregation: Checking for newer conversations on secondary accounts | Agregacja: Sprawdzanie nowszych rozmów na kontach pobocznych
-Log_Stage2_Download | Downloading {0} newer conversations from {1} | Pobieranie {0} nowszych rozmów z {1}
-Log_Stage2_Distribute | Distribution: Sending updated conversations to other accounts | Dystrybucja: Rozsyłanie zaktualizowanych rozmów na pozostałe konta
-Log_Stage2_Upload | Uploading {0} newest conversations to {1} | Wysyłanie {0} najnowszych rozmów do {1}
-Log_SyncCancelledByUser | Sync interruption requested by user | Przerwanie synchronizacji na żądanie użytkownika
-Sync_ButtonStopping | Stopping | Zatrzymywanie
-Sync_ButtonSyncing | Syncing | Synchronizuję
-Status_SyncInProgress | Synchronization in progress | Synchronizacja w toku
+Config_AutoDetecting | Scanning Google Drive for 'Google AI Studio' folder... | Trwa skanowanie Dysku Google w poszukiwaniu folderu 'Google AI Studio'...

@@ -202,16 +202,37 @@
                              Foreground="{StaticResource TextMuted}" />
                     <TextBlock Text="{i18N:Localize Config_FolderLabel}" Foreground="{StaticResource TextMuted}"
                                Margin="0,10,0, -10" />
+
+                    <!-- Folder ID Field (read-only while auto-detecting, disabled while verifying) -->
                     <TextBox Text="{Binding PendingFolderId}" Watermark="{i18N:Localize Config_FolderWatermark}"
-                             IsEnabled="{Binding !IsVerifyingFolder}" />
-                    <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentBlue}"
-                                 IsVisible="{Binding IsVerifyingFolder}" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0"
-                                IsEnabled="{Binding !IsVerifyingFolder}">
+                             IsEnabled="{Binding !IsVerifyingFolder}" 
+                             IsReadOnly="{Binding IsAutoDetectingFolder}"/>
+
+                    <!-- Auto-detection scanning indicator -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsAutoDetectingFolder}" HorizontalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentBlue}" Width="80" VerticalAlignment="Center"/>
+                        <TextBlock Text="{i18N:Localize Config_AutoDetecting}" Foreground="{StaticResource AccentBlue}" FontSize="12" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Save verification progress bar -->
+                    <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentGreen}"
+                                 IsVisible="{Binding IsVerifyingFolder}" Margin="0,10" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
                         <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelConfigCommand}"
-                                Classes="outline" />
+                                Classes="outline" IsEnabled="{Binding !IsVerifyingFolder}"/>
+                        
+                        <!-- Confirm button is hidden during auto-detection and verification -->
                         <Button Content="{i18N:Localize Btn_Confirm}" Command="{Binding ConfirmConfigCommand}"
-                                Classes="solid" />
+                                Classes="solid" 
+                                IsEnabled="{Binding !IsVerifyingFolder}">
+                            <Button.IsVisible>
+                                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                    <Binding Path="!IsVerifyingFolder"/>
+                                    <Binding Path="!IsAutoDetectingFolder"/>
+                                </MultiBinding>
+                            </Button.IsVisible>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Border>

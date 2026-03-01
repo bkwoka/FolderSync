@@ -13,4 +13,5 @@ public interface IDriveOrchestratorService
     Task DeleteDriveAsync(RemoteInfo targetToRemove);
     Task SetAsMasterAsync(RemoteInfo newMaster);
     Task<(AppConfig Config, List<RemoteInfo> CorruptedRemotes)> GetDrivesStateAsync();
+    Task<string?> AutoDetectFolderIdAsync(string token, CancellationToken cancellationToken = default);
 }
