@@ -1,0 +1,89 @@
+name: Build and Release FolderSync
+
+# This workflow trigger only when a git tag starting with "v" (e.g., v0.1.0) is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Cross-compile on platform-native GitHub runners.
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive_name: FolderSync-win-x64.zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive_name: FolderSync-linux-x64.zip
+          - os: macos-latest
+            rid: osx-x64
+            archive_name: FolderSync-osx-x64.zip
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run Unit Tests
+        run: dotnet test tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release
+        
+      - name: Publish App
+        # Single-file publish; creates a self-contained runtime environment for the end-user.
+        run: dotnet publish src/FolderSync/FolderSync.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish_output
+
+      - name: Archive Files (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path ./publish_output/* -DestinationPath ./${{ matrix.archive_name }}
+
+      - name: Archive Files (Linux & Mac)
+        if: matrix.os != 'windows-latest'
+        run: zip -r ./${{ matrix.archive_name }} ./publish_output/* -j
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}-binary
+          path: ./${{ matrix.archive_name }}
+
+  # Aggregates artifacts from all build matrices and creates a consolidated GitHub Release.
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256 Checksums
+        run: |
+          cd ./artifacts
+          sha256sum *.zip > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            ./artifacts/*.zip
+            ./artifacts/sha256sums.txt
+          generate_release_notes: true

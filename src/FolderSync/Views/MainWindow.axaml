@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:FolderSync.ViewModels"
+        xmlns:i18N="using:FolderSync.MarkupExtensions"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="650"
+        x:Class="FolderSync.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        d:DataContext="{x:Static vm:DesignTimeViewModels.MainWindowViewModel}"
+        Title="Google AI Studio Sync"
+        Width="1000" Height="700"
+        MinWidth="850" MinHeight="600"
+        Icon="/Assets/app-icon.png"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgApp}">
+
+    <Panel>
+
+        <!-- GLOBAL LOCK BANNER: Displayed when the application is processing data in the background -->
+        <Border Background="{StaticResource AccentBlue}" Padding="10,4" ZIndex="50" VerticalAlignment="Top"
+                IsVisible="{Binding IsAppLocked}"
+                IsHitTestVisible="False">
+            <TextBlock Text="{i18N:Localize Status_AppLockedBanner}"
+                       Foreground="{StaticResource TextMain}" FontSize="13" HorizontalAlignment="Center" />
+        </Border>
+
+        <!-- APPLICATION CORE: Main Navigation and View Switching -->
+        <TabControl Margin="10, 15, 10, 10" IsEnabled="{Binding !IsRcloneMissing}">
+            <TabItem Header="{i18N:Localize Tab_Sync}" FontSize="15">
+                <ContentControl Content="{Binding SyncTab}" />
+            </TabItem>
+            <TabItem Header="{i18N:Localize Tab_Browser}" FontSize="15">
+                <ContentControl Content="{Binding BrowserTab}" />
+            </TabItem>
+            <TabItem Header="{i18N:Localize Tab_Settings}" FontSize="15">
+                <ContentControl Content="{Binding SettingsTab}" />
+            </TabItem>
+        </TabControl>
+
+        <!-- APPLICATION OVERLAY: Backend initialization and bootstrapper progress -->
+        <Border IsVisible="{Binding IsRcloneMissing}" Background="#DD000000" ZIndex="999">
+            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource AccentBlue}" BorderThickness="2"
+                    CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    MaxWidth="600" MinWidth="450">
+                <StackPanel>
+                    <PathIcon Data="M19 9H15V3H9V9H5L12 16L19 9ZM5 18V20H19V18H5Z" Width="48" Height="48"
+                              Foreground="{StaticResource AccentBlue}" HorizontalAlignment="Center" Margin="0,0,0,20" />
+                    <TextBlock Text="{i18N:Localize Bootstrapper_Init}" FontSize="20" FontWeight="Bold"
+                               Foreground="{StaticResource TextMain}" HorizontalAlignment="Center" />
+
+                    <TextBlock Text="{Binding DownloadStatus }" TextWrapping="Wrap" FontSize="15"
+                               Foreground="{StaticResource TextMuted}" TextAlignment="Center" Margin="0,10" />
+
+                    <ProgressBar IsVisible="{Binding IsDownloadingRclone}" Minimum="0" Maximum="100"
+                                 Value="{Binding RcloneDownloadProgress}" Foreground="{StaticResource AccentGreen}"
+                                 Height="20" CornerRadius="4" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+    </Panel>
+</Window>

@@ -1,0 +1,55 @@
+## Standard .NET Core/5+ .gitignore
+[Bb]in/
+[Oo]bj/
+out/
+
+## Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docuser
+*.suo
+*.userprefs
+
+## Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+.idea.FolderSync*/
+
+## Infrastructure & Security
+log/
+.fsbak
+*.tmp
+rclone.conf
+appsettings.json
+
+## Development tools and OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Project Specific
+log/
+*.txt.log
+*.log
+
+## Rclone technical files (cautionary)
+.rclone.conf
+rclone.conf
+
+## Avalonia specific (if any, usually standard .NET covers it)
+*.axaml.g.cs
+
+## Other
+*.tmp
+*.bak
+*.swp
+/tasks

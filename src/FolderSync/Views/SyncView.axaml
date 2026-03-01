@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:FolderSync.ViewModels"
+             xmlns:helpers="using:FolderSync.Helpers"
+             xmlns:i18N="using:FolderSync.MarkupExtensions"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="FolderSync.Views.SyncView"
+             x:DataType="vm:SyncViewModel"
+             d:DataContext="{x:Static vm:DesignTimeViewModels.SyncViewModel}">
+
+    <Panel>
+        <Grid RowDefinitions="Auto, *, Auto" Margin="20">
+
+            <!-- HEADER: Global Synchronization Status and Progress -->
+            <StackPanel Grid.Row="0" Spacing="10" Margin="0,-10,0,10">
+                <TextBlock Text="{i18N:Localize Sync_LogHeader}" FontSize="20" FontWeight="SemiBold" />
+
+                <Panel Height="30">
+                    <ProgressBar Minimum="0" Maximum="100"
+                                 Value="{Binding ProgressValue}"
+                                 Foreground="{StaticResource AccentBlue}"
+                                 Background="{StaticResource BgCard}"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalAlignment="Stretch"
+                                 CornerRadius="4"
+                                 ShowProgressText="False"
+                                 BorderBrush="{StaticResource BgBorder}"
+                                 BorderThickness="1" />
+
+                    <TextBlock Text="{Binding Status}"
+                               Foreground="{StaticResource TextMuted}"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Margin="15,0,0,0" />
+                </Panel>
+            </StackPanel>
+
+            <!-- LOG OUTPUT: Real-time synchronization activity visualization -->
+            <Border Grid.Row="1" Background="{StaticResource BgCard}" BorderBrush="{StaticResource BgBorder}"
+                    BorderThickness="1" CornerRadius="4" Padding="15">
+                <ScrollViewer x:Name="LogScroll">
+                    <ItemsControl ItemsSource="{Binding Logs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="helpers:LogEntry">
+                                <StackPanel Orientation="Horizontal" Margin="{Binding Margin}" MinHeight="22">
+                                    <PathIcon Data="{Binding IconPath}"
+                                              Foreground="{Binding IconColor}"
+                                              IsVisible="{Binding HasIcon}"
+                                              Width="10" Height="10"
+                                              Margin="0,0,8,1"
+                                              VerticalAlignment="Center" />
+
+                                    <TextBlock Text="{Binding Text}"
+                                               Foreground="{StaticResource TextMuted}"
+                                               FontFamily="Monospace"
+                                               FontSize="13"
+                                               VerticalAlignment="Center" />
+
+
+                                    <PathIcon Classes="spinning"
+                                              Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 1,1 4,12A8,8 0 0,1 12,4Z"
+                                              Foreground="{StaticResource AccentBlue}"
+                                              Width="12" Height="12"
+                                              Margin="10,0,0,0"
+                                              VerticalAlignment="Center"
+                                              IsVisible="{Binding IsActive}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <!-- ACTION BAR: Synchronization Controls -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10"
+                        Margin="0,10,0,0">
+                <!-- STOP ACTION: Visible only during active orchestration -->
+                <Button Content="{i18N:Localize Btn_Stop}"
+                        Command="{Binding CancelSyncCommand}"
+                        IsVisible="{Binding IsBusy}"
+                        Classes="solid" />
+
+                <!-- START ACTION: Initiates the multi-stage sync process -->
+                <Button Content="{Binding SyncButtonText}"
+                        Command="{Binding StartSyncCommand}"
+                        IsEnabled="{Binding !IsBusy}"
+                        Classes="solid" />
+            </StackPanel>
+        </Grid>
+
+        <!-- OVERLAY: Validation Failure / Halt Notification -->
+        <Border IsVisible="{Binding IsValidationModalVisible}" ZIndex="100" Background="#aa000000">
+            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" MinWidth="450" MaxWidth="550">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="{i18N:Localize Sync_HaltedTitle}" FontSize="20" FontWeight="Bold"
+                               Foreground="{StaticResource AccentRed}" />
+
+                    <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource AccentRed}"
+                            BorderThickness="1" Padding="15" CornerRadius="4" Margin="0,10">
+                        <TextBlock Text="{Binding ValidationMessage}" TextWrapping="Wrap" FontSize="14" />
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                        <Button Content="{i18N:Localize Btn_GotIt}" Command="{Binding CloseValidationModalCommand}"
+                                Classes="solid" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+    </Panel>
+</UserControl>

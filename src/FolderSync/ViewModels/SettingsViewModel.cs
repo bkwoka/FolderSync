@@ -1,0 +1,604 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using FolderSync.Models;
+using FolderSync.Services.Interfaces;
+using CommunityToolkit.Mvvm.Messaging;
+using FolderSync.Messages;
+using NLog;
+
+namespace FolderSync.ViewModels;
+
+public record LanguageItem(string DisplayName, string CultureCode);
+
+/// <summary>
+/// ViewModel for the Settings view, managing drive configurations, application preferences, and profile backup/restore.
+/// </summary>
+public partial class SettingsViewModel : ViewModelBase
+{
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+    private readonly IConfigService _configService;
+    private readonly ITranslationService _localizer;
+    private readonly IRcloneBootstrapper _bootstrapper;
+    private readonly IFilePickerService _filePickerService;
+    private readonly IUpdateService _updateService;
+    private readonly IDriveOrchestratorService _driveOrchestrator;
+    private readonly IProfileOrchestratorService _profileOrchestrator;
+
+    public ObservableCollection<RemoteInfo> SavedRemotes { get; } = new();
+
+    [ObservableProperty] private RemoteInfo? _selectedRemote;
+
+    /// <summary>
+    /// Temporary storage for a remote designated for a deletion/edit process.
+    /// </summary>
+    [ObservableProperty] private RemoteInfo? _remoteToProcess;
+
+    [ObservableProperty] private string _pendingName = string.Empty;
+    [ObservableProperty] private string _pendingEmail = string.Empty;
+    [ObservableProperty] private string _pendingFolderId = string.Empty;
+    private string _pendingToken = string.Empty;
+    [ObservableProperty] private string _statusMessage;
+    [ObservableProperty] private string _currentMasterName;
+    [ObservableProperty] private string _oauthCountdownText = string.Empty;
+    [ObservableProperty] private string _corruptedRemotesText = string.Empty;
+    private List<RemoteInfo> _corruptedRemotesList = new();
+    [ObservableProperty] private bool _isOauthModalVisible;
+    [ObservableProperty] private bool _isConfigModalVisible;
+    [ObservableProperty] private bool _isOverwriteModalVisible;
+    [ObservableProperty] private bool _isDeleteModalVisible;
+    [ObservableProperty] private bool _isVerifyingFolder;
+
+    [ObservableProperty] private bool _isIntegrityModalVisible;
+
+    /// <summary>
+    /// Controls the visibility of the manual update notification modal.
+    /// </summary>
+    [ObservableProperty] private bool _isUpdateModalVisible;
+
+    [ObservableProperty] private bool _isBackupModalVisible;
+    [ObservableProperty] private string _backupModalTitle = string.Empty;
+    [ObservableProperty] private string _backupModalDescription = string.Empty;
+    [ObservableProperty] private string _backupPassword = string.Empty;
+    [ObservableProperty] private string _backupErrorMessage = string.Empty;
+    [ObservableProperty] private bool _isBackupProcessing;
+
+    private string _backupSelectedPath = string.Empty;
+    private bool _isExportingOperation;
+
+    /// <summary>
+    /// Displays the current application version retrieved from the assembly metadata.
+    /// </summary>
+    [ObservableProperty]
+    private string _appVersionDisplay = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "Unknown";
+    [ObservableProperty] private bool _isUpdateAvailable;
+    [ObservableProperty] private string _updateMessage = string.Empty;
+    [ObservableProperty] private string _updateUrl = string.Empty;
+
+    [ObservableProperty] private bool _skipRenameWarningPreference;
+    [ObservableProperty] private bool _skipDeleteWarningPreference;
+    [ObservableProperty] private LanguageItem? _selectedLanguage;
+
+    public List<LanguageItem> AvailableLanguages { get; } = new()
+    {
+        new LanguageItem("English", "en"),
+        new LanguageItem("Polski", "pl")
+    };
+
+    private CancellationTokenSource? _oauthCts;
+    private bool _isInitializing;
+
+    public SettingsViewModel(IConfigService configService, ITranslationService localizer,
+        IRcloneBootstrapper bootstrapper,
+        IFilePickerService filePickerService, IUpdateService updateService,
+        IDriveOrchestratorService driveOrchestrator, IProfileOrchestratorService profileOrchestrator)
+    {
+        _configService = configService;
+        _localizer = localizer;
+        _bootstrapper = bootstrapper;
+        _filePickerService = filePickerService;
+        _updateService = updateService;
+        _driveOrchestrator = driveOrchestrator;
+        _profileOrchestrator = profileOrchestrator;
+
+        _statusMessage = _localizer["Status_Ready"];
+        _currentMasterName = _localizer["Status_NotSet"];
+
+        _ = LoadDataAndCheckIntegrityAsync();
+
+        WeakReferenceMessenger.Default.Register<LanguageChangedMessage>(this, (r, m) =>
+        {
+            if (!IsAppLocked) StatusMessage = _localizer["Status_Ready"];
+
+            // Performance optimization: Update only local memory strings to avoid redundant configuration I/O.
+            var master = SavedRemotes.FirstOrDefault(rm => rm.IsMaster);
+            CurrentMasterName = master != null
+                ? $"{master.FriendlyName} ({master.RcloneRemote})"
+                : _localizer["Status_NotSet"];
+
+            if (IsIntegrityModalVisible)
+                StatusMessage = _localizer["Warning_IntegrityProblem"];
+        });
+    }
+
+    private async Task SavePreferenceAsync(Action<AppConfig> updateAction)
+    {
+        try
+        {
+            var config = await _configService.LoadConfigAsync();
+            updateAction(config);
+            await _configService.SaveConfigAsync(config);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to save UI preferences.");
+        }
+    }
+
+    protected override void OnAppLockChanged(bool isLocked)
+    {
+        StatusMessage = isLocked ? _localizer["Status_AppLockedSync"] : _localizer["Status_Ready"];
+        StartAddDriveCommand.NotifyCanExecuteChanged();
+        StartExportProfileCommand.NotifyCanExecuteChanged();
+        StartImportProfileCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    private async Task LoadDataAndCheckIntegrityAsync()
+    {
+        _ = CheckForUpdatesAsync();
+        try
+        {
+            var state = await _driveOrchestrator.GetDrivesStateAsync();
+
+            _isInitializing = true;
+            try
+            {
+                SkipRenameWarningPreference = state.Config.SkipRenameSyncWarning;
+                SkipDeleteWarningPreference = state.Config.SkipDeleteSyncWarning;
+                SelectedLanguage = AvailableLanguages.FirstOrDefault(l => l.CultureCode == state.Config.Language) ??
+                                   AvailableLanguages[0];
+            }
+            finally
+            {
+                _isInitializing = false;
+            }
+
+            SavedRemotes.Clear();
+            foreach (var remote in state.Config.Remotes) SavedRemotes.Add(remote);
+
+            var master = state.Config.Remotes.FirstOrDefault(r => r.FolderId == state.Config.MasterRemoteId);
+            CurrentMasterName = master != null
+                ? $"{master.FriendlyName} ({master.RcloneRemote})"
+                : _localizer["Status_NotSet"];
+            foreach (var remote in SavedRemotes) remote.IsMaster = (remote.FolderId == state.Config.MasterRemoteId);
+
+            if (!_bootstrapper.IsInstalled()) return;
+
+            _corruptedRemotesList = state.CorruptedRemotes;
+            if (_corruptedRemotesList.Any())
+            {
+                CorruptedRemotesText = string.Join(", ", _corruptedRemotesList.Select(r => r.FriendlyName));
+                IsIntegrityModalVisible = true;
+                StatusMessage = _localizer["Warning_IntegrityProblem"];
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "LoadDataAndCheckIntegrityAsync failed");
+        }
+    }
+
+    [RelayCommand]
+    private void IgnoreIntegrity()
+    {
+        IsIntegrityModalVisible = false;
+        StatusMessage = _localizer["Status_IntegrityIgnored"];
+    }
+
+    [RelayCommand]
+    private async Task AutoRepairIntegrity()
+    {
+        IsIntegrityModalVisible = false;
+        StatusMessage = _localizer["Status_AutoRepairing"];
+        try
+        {
+            await _profileOrchestrator.AutoRepairIntegrityAsync(_corruptedRemotesList);
+            await LoadDataAndCheckIntegrityAsync();
+            StatusMessage = _localizer["Success_GhostRemoved"];
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = _localizer["Error_AutoRepairFailed"];
+            Logger.Error(ex, "AutoRepairIntegrity failed");
+        }
+    }
+
+    private bool CanAddDrive() => !IsAppLocked;
+
+    [RelayCommand(CanExecute = nameof(CanAddDrive))]
+    private async Task StartAddDrive()
+    {
+        IsOauthModalVisible = true;
+        OauthCountdownText = _localizer["OAuth_WaitingDefault"];
+        _oauthCts = new CancellationTokenSource();
+        _oauthCts.CancelAfter(TimeSpan.FromMinutes(5));
+        _ = RunCountdownAsync(_oauthCts.Token);
+
+        try
+        {
+            var result = await _driveOrchestrator.AuthorizeNewDriveAsync(_oauthCts.Token);
+            _pendingToken = result.Token;
+            PendingName = result.Name;
+            PendingEmail = result.Email;
+            PendingFolderId = string.Empty;
+
+            IsOauthModalVisible = false;
+            IsConfigModalVisible = true;
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = _localizer["Status_LoginCancelled"];
+            IsOauthModalVisible = false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = _localizer["Error_GoogleAuth"];
+            Logger.Error(ex, "OAuth Error");
+            IsOauthModalVisible = false;
+        }
+        finally
+        {
+            if (_oauthCts != null && !_oauthCts.IsCancellationRequested) _oauthCts.Cancel();
+            _oauthCts?.Dispose();
+            _oauthCts = null;
+        }
+    }
+
+    private async Task RunCountdownAsync(CancellationToken ct)
+    {
+        var timeLeft = TimeSpan.FromMinutes(5);
+        while (timeLeft >= TimeSpan.Zero && !ct.IsCancellationRequested && IsOauthModalVisible)
+        {
+            OauthCountdownText = string.Format(_localizer["OAuth_TimeLeft"], timeLeft.ToString("mm\\:ss"));
+            try
+            {
+                await Task.Delay(1000, ct);
+                timeLeft -= TimeSpan.FromSeconds(1);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void CancelOauth() => _oauthCts?.Cancel();
+
+    [RelayCommand]
+    private void CancelConfig()
+    {
+        IsConfigModalVisible = false;
+        StatusMessage = _localizer["Status_DriveAddCancelled"];
+    }
+
+    [RelayCommand]
+    private async Task ConfirmOverwriteAsync()
+    {
+        IsOverwriteModalVisible = false;
+        await FinalizeAddDrive(overwrite: true);
+    }
+
+    [RelayCommand]
+    private void CancelOverwrite()
+    {
+        IsOverwriteModalVisible = false;
+        StatusMessage = _localizer["Status_DriveOverwriteCancelled"];
+    }
+
+    [RelayCommand]
+    private async Task ConfirmConfigAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PendingName))
+        {
+            StatusMessage = _localizer["Error_NameRequired"];
+            return;
+        }
+
+        bool isNameSafe = PendingName.All(c => char.IsLetterOrDigit(c) || c == ' ' || c == '_' || c == '-');
+        if (!isNameSafe)
+        {
+            StatusMessage = _localizer["Error_InvalidCharacters"];
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PendingFolderId))
+        {
+            StatusMessage = _localizer["Error_FolderIdRequired"];
+            return;
+        }
+
+        IsVerifyingFolder = true;
+        try
+        {
+            bool folderExists = await _driveOrchestrator.VerifyFolderExistsAsync(_pendingToken, PendingFolderId);
+            if (!folderExists)
+            {
+                StatusMessage = _localizer["Error_FolderNotFound"];
+                return;
+            }
+        }
+        finally
+        {
+            IsVerifyingFolder = false;
+        }
+
+        IsConfigModalVisible = false;
+        bool emailExists =
+            SavedRemotes.Any(r => r.RcloneRemote.Equals(PendingEmail, StringComparison.OrdinalIgnoreCase));
+        if (emailExists) IsOverwriteModalVisible = true;
+        else await FinalizeAddDrive(overwrite: false);
+    }
+
+    private async Task FinalizeAddDrive(bool overwrite)
+    {
+        StatusMessage = _localizer["Status_SavingMesh"];
+        try
+        {
+            await _driveOrchestrator.AddNewDriveAsync(PendingName, PendingEmail, PendingFolderId, _pendingToken,
+                overwrite);
+            await LoadDataAndCheckIntegrityAsync();
+            StatusMessage = _localizer["Success_DriveAdded"];
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = _localizer["Error_DriveSaveFailed"];
+            Logger.Error(ex, "FinalizeAddDrive failed");
+        }
+    }
+
+    // Parameterized method
+    [RelayCommand]
+    private void StartDeleteRemote(RemoteInfo item)
+    {
+        if (item == null) return;
+        RemoteToProcess = item;
+        SelectedRemote = item; // Highlight the selected row in the UI corelation.
+        IsDeleteModalVisible = true;
+    }
+
+    [RelayCommand]
+    private void CancelDelete()
+    {
+        IsDeleteModalVisible = false;
+        RemoteToProcess = null;
+        StatusMessage = _localizer["Status_DriveDeleteCancelled"];
+    }
+
+    // Data source mapped to Process Remote
+    [RelayCommand]
+    private async Task ConfirmDelete()
+    {
+        if (RemoteToProcess == null) return;
+        IsDeleteModalVisible = false;
+        StatusMessage = _localizer["Status_RemovingMesh"];
+
+        var targetToRemove = RemoteToProcess;
+
+        try
+        {
+            await _driveOrchestrator.DeleteDriveAsync(targetToRemove);
+            await LoadDataAndCheckIntegrityAsync();
+            StatusMessage = string.Format(_localizer["Success_DriveRemoved"], targetToRemove.FriendlyName);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = _localizer["Error_CheckLogs"];
+            Logger.Error(ex, "Account deletion failed.");
+        }
+        finally
+        {
+            RemoteToProcess = null;
+        }
+    }
+
+    // Overload with row parameter
+    [RelayCommand]
+    private async Task SetAsMaster(RemoteInfo item)
+    {
+        if (item == null || item.IsMaster) return;
+        await _driveOrchestrator.SetAsMasterAsync(item);
+        await LoadDataAndCheckIntegrityAsync();
+        StatusMessage = _localizer["Success_MasterChanged"];
+    }
+
+    [RelayCommand]
+    private void OpenFolderInBrowser(string folderId)
+    {
+        if (string.IsNullOrWhiteSpace(folderId)) return;
+        string url = $"https://drive.google.com/drive/folders/{folderId}";
+        try
+        {
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform
+                    .Windows))
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices
+                         .OSPlatform.OSX))
+                Process.Start("open", url);
+            else
+                Process.Start("xdg-open", url);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, "Failed to open the system browser for the requested URL.");
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddDrive))]
+    private async Task StartExportProfile()
+    {
+        var path = await _filePickerService.SaveFileDialogAsync(_localizer["Backup_SaveTitle"], "FolderSync_Profile",
+            ".fsbak");
+        if (string.IsNullOrEmpty(path)) return;
+
+        _backupSelectedPath = path;
+        _isExportingOperation = true;
+        BackupModalTitle = _localizer["Backup_ExportTitle"];
+        BackupModalDescription = _localizer["Backup_ExportDesc"];
+        BackupPassword = string.Empty;
+        BackupErrorMessage = string.Empty;
+        IsBackupModalVisible = true;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddDrive))]
+    private async Task StartImportProfile()
+    {
+        var path = await _filePickerService.OpenFileDialogAsync(_localizer["Backup_OpenTitle"], new[] { ".fsbak" });
+        if (string.IsNullOrEmpty(path)) return;
+
+        _backupSelectedPath = path;
+        _isExportingOperation = false;
+        BackupModalTitle = _localizer["Backup_ImportTitle"];
+        BackupModalDescription = _localizer["Backup_ImportDesc"];
+        BackupPassword = string.Empty;
+        BackupErrorMessage = string.Empty;
+        IsBackupModalVisible = true;
+    }
+
+    [RelayCommand]
+    private void CancelBackup()
+    {
+        IsBackupModalVisible = false;
+        BackupPassword = string.Empty;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmBackupOperation()
+    {
+        BackupErrorMessage = string.Empty;
+        if (BackupPassword.Length < AppConstants.MinPasswordLength)
+        {
+            BackupErrorMessage = _localizer["Error_PasswordShort"];
+            return;
+        }
+
+        IsBackupProcessing = true;
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+
+        try
+        {
+            if (_isExportingOperation)
+            {
+                await _profileOrchestrator.ExportProfileAsync(BackupPassword, _backupSelectedPath);
+                StatusMessage = _localizer["Success_Exported"];
+            }
+            else
+            {
+                await _profileOrchestrator.ImportProfileAsync(BackupPassword, _backupSelectedPath);
+                StatusMessage = _localizer["Success_Imported"];
+                await LoadDataAndCheckIntegrityAsync();
+                if (SelectedLanguage != null)
+                {
+                    _localizer.Culture = new System.Globalization.CultureInfo(SelectedLanguage.CultureCode);
+                    WeakReferenceMessenger.Default.Send(new LanguageChangedMessage(SelectedLanguage.CultureCode));
+                }
+            }
+
+            IsBackupModalVisible = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            BackupErrorMessage = _localizer["Error_WrongPassword"];
+        }
+        catch (InvalidOperationException)
+        {
+            BackupErrorMessage = _localizer["Error_InvalidFile"];
+        }
+        catch (Exception ex)
+        {
+            BackupErrorMessage = _localizer["Error_BackupUnknown"];
+            Logger.Error(ex, "Profile backup/restore operation failed.");
+        }
+        finally
+        {
+            IsBackupProcessing = false;
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
+            BackupPassword = string.Empty;
+        }
+    }
+
+    // Update Modal integration
+    [RelayCommand]
+    private void ShowUpdateModal()
+    {
+        IsUpdateModalVisible = true;
+    }
+
+    [RelayCommand]
+    private void CancelUpdate()
+    {
+        IsUpdateModalVisible = false;
+    }
+
+    [RelayCommand]
+    private void ConfirmUpdate()
+    {
+        IsUpdateModalVisible = false;
+        if (string.IsNullOrEmpty(UpdateUrl)) return;
+
+        try
+        {
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform
+                    .Windows))
+                Process.Start(new ProcessStartInfo { FileName = UpdateUrl, UseShellExecute = true });
+            else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices
+                         .OSPlatform.OSX))
+                Process.Start("open", UpdateUrl);
+            else
+                Process.Start("xdg-open", UpdateUrl);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, "Failed to open the system browser for updates.");
+        }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        var updateInfo = await _updateService.CheckForUpdatesAsync();
+        if (updateInfo != null && updateInfo.IsUpdateAvailable)
+        {
+            UpdateUrl = updateInfo.ReleaseUrl;
+            UpdateMessage = string.Format(_localizer["Update_Available"], updateInfo.VersionName);
+            IsUpdateAvailable = true;
+        }
+    }
+
+    partial void OnSelectedLanguageChanged(LanguageItem? value)
+    {
+        if (!_isInitializing && value != null)
+        {
+            _localizer.Culture = new System.Globalization.CultureInfo(value.CultureCode);
+            _ = SavePreferenceAsync(c => c.Language = value.CultureCode);
+            WeakReferenceMessenger.Default.Send(new LanguageChangedMessage(value.CultureCode));
+        }
+    }
+
+    partial void OnSkipRenameWarningPreferenceChanged(bool value)
+    {
+        if (!_isInitializing) _ = SavePreferenceAsync(c => c.SkipRenameSyncWarning = value);
+    }
+
+    partial void OnSkipDeleteWarningPreferenceChanged(bool value)
+    {
+        if (!_isInitializing) _ = SavePreferenceAsync(c => c.SkipDeleteSyncWarning = value);
+    }
+}
