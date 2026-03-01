@@ -31,21 +31,21 @@ def main():
     keys = []
     start = False
     for line in lines:
-        if line.startswith("Klucz | Wartość Angielska"):
+        if line.startswith("Key | English | Polish"):
             start = True
             continue
         if start and "|" in line:
             parts = [p.strip() for p in line.split("|")]
             if len(parts) >= 3:
                 k = parts[0]
-                if k == "Klucz": continue
+                if k == "Key": continue
                 # Handle explicit newline escape sequences for multiline strings
                 v1 = parts[1].replace("\\n", "\n")
                 v2 = parts[2].replace("\\n", "\n")
                 keys.append((k, v1, v2))
 
     if not keys:
-        print("WARNING: No localization keys detected in transitions.txt.")
+        print("WARNING: No localization keys detected in translations.txt.")
         return
 
     # Update individual resource files

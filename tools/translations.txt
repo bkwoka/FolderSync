@@ -1,4 +1,4 @@
-Klucz | Wartość Angielska | Wartość Polska
+Key | English | Polish
 Log_Header_Prep | Prepare folders | Przygotowanie folderów
 UpdateModal_Title | Update Available | Dostępna aktualizacja
 UpdateModal_Desc | A new version of the application is available on GitHub. Do you want to open the download page? | Nowa wersja aplikacji jest dostępna na GitHub. Czy chcesz otworzyć stronę pobierania w przeglądarce?
