@@ -68,7 +68,11 @@ public class SyncConsolidateStageTests
         var mockLocalizer = new Mock<ITranslationService>();
         mockLocalizer.Setup(l => l[It.IsAny<string>()]).Returns((string s) => s);
 
-        var stage = new SyncConsolidateStage(mockRclone.Object, mockLocalizer.Object);
+        var mockGoogleApi = new Mock<IGoogleDriveApiService>();
+        mockGoogleApi.Setup(x => x.DeleteFolderIfOwnedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync(true);
+
+        var stage = new SyncConsolidateStage(mockRclone.Object, mockGoogleApi.Object, mockLocalizer.Object);
 
         // Act
         await stage.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
@@ -82,6 +86,9 @@ public class SyncConsolidateStageTests
         mockRclone.Verify(x => x.ExecuteCommandAsync(
             It.Is<string[]>(a => a.Contains("moveto") && a[2].Contains("_") && a[2].EndsWith(".prompt")), 
             null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()), Times.Once);
+
+        // Verification of secure REST API deletion instead of Rclone purge
+        mockGoogleApi.Verify(x => x.DeleteFolderIfOwnedAsync(remote.RcloneRemote, orphanId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>
@@ -123,7 +130,11 @@ public class SyncConsolidateStageTests
         var mockLocalizer = new Mock<ITranslationService>();
         mockLocalizer.Setup(l => l[It.IsAny<string>()]).Returns((string s) => s);
 
-        var stage = new SyncConsolidateStage(mockRclone.Object, mockLocalizer.Object);
+        var mockGoogleApi = new Mock<IGoogleDriveApiService>();
+        mockGoogleApi.Setup(x => x.DeleteFolderIfOwnedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync(true);
+
+        var stage = new SyncConsolidateStage(mockRclone.Object, mockGoogleApi.Object, mockLocalizer.Object);
 
         // Act
         await stage.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
@@ -137,5 +148,8 @@ public class SyncConsolidateStageTests
         mockRclone.Verify(x => x.ExecuteCommandAsync(
             It.Is<string[]>(a => a.Contains("moveto") && a[2].EndsWith("Chat.prompt")), 
             null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()), Times.Once);
+
+        // Verification of secure REST API deletion
+        mockGoogleApi.Verify(x => x.DeleteFolderIfOwnedAsync(remote.RcloneRemote, orphanId, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

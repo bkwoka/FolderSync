@@ -223,7 +223,8 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private async Task AutoRepairIntegrity()
     {
-        // UX Improvement: Show progress indicator within the modal instead of closing it immediately.
+        // Show progress indicator within the modal instead of closing it immediately
+        // to provide continuous visual feedback during the repair process.
         IsProcessingRemoteAction = true;
         WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
@@ -460,7 +461,7 @@ public partial class SettingsViewModel : ViewModelBase
         // Lock UI before presenting the deletion confirmation dialog.
         WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
         RemoteToProcess = item;
-        SelectedRemote = item; // Highlight the selected row in the UI corelation.
+        SelectedRemote = item; // Highlight the selected row for UI correlation.
         IsDeleteModalVisible = true;
     }
 
@@ -479,7 +480,8 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (RemoteToProcess == null) return;
         
-        // UX Enhancement: Activate progress indicator and keep the modal open during the deletion process.
+        // Activate progress indicator and keep the modal open during the deletion process
+        // to ensure the user is aware of the background task status.
         IsProcessingRemoteAction = true;
         WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
