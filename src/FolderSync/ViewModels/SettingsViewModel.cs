@@ -61,6 +61,16 @@ public partial class SettingsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty] private bool _isAutoDetectingFolder;
 
+    /// <summary>
+    /// Tracks foreground processing for remote actions (Repair, Delete) to show progress within modals.
+    /// </summary>
+    [ObservableProperty] private bool _isProcessingRemoteAction;
+
+    /// <summary>
+    /// Tracks drive configuration save state to prevent concurrent modifications within the config modal.
+    /// </summary>
+    [ObservableProperty] private bool _isSavingDrive;
+
     [ObservableProperty] private bool _isIntegrityModalVisible;
 
     /// <summary>
@@ -153,6 +163,8 @@ public partial class SettingsViewModel : ViewModelBase
         StartAddDriveCommand.NotifyCanExecuteChanged();
         StartExportProfileCommand.NotifyCanExecuteChanged();
         StartImportProfileCommand.NotifyCanExecuteChanged();
+        StartDeleteRemoteCommand.NotifyCanExecuteChanged();
+        SetAsMasterCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -211,26 +223,41 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private async Task AutoRepairIntegrity()
     {
-        IsIntegrityModalVisible = false;
-        StatusMessage = _localizer["Status_AutoRepairing"];
+        // UX Improvement: Show progress indicator within the modal instead of closing it immediately.
+        IsProcessingRemoteAction = true;
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+
         try
         {
             await _profileOrchestrator.AutoRepairIntegrityAsync(_corruptedRemotesList);
             await LoadDataAndCheckIntegrityAsync();
             StatusMessage = _localizer["Success_GhostRemoved"];
+            
+            // Operation successful: Close the integrity modal.
+            IsIntegrityModalVisible = false;
         }
         catch (Exception ex)
         {
             StatusMessage = _localizer["Error_AutoRepairFailed"];
             Logger.Error(ex, "AutoRepairIntegrity failed");
         }
+        finally
+        {
+            IsProcessingRemoteAction = false;
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
+        }
     }
 
     private bool CanAddDrive() => !IsAppLocked;
 
+    private bool CanModifyRemote() => !IsAppLocked;
+
     [RelayCommand(CanExecute = nameof(CanAddDrive))]
     private async Task StartAddDrive()
     {
+        // Global UI Lock: Prevent interference during sensitive setup operations.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+
         IsOauthModalVisible = true;
         OauthCountdownText = _localizer["OAuth_WaitingDefault"];
         _oauthCts = new CancellationTokenSource();
@@ -255,12 +282,16 @@ public partial class SettingsViewModel : ViewModelBase
         {
             StatusMessage = _localizer["Status_LoginCancelled"];
             IsOauthModalVisible = false;
+            // Unlock UI if the authorization process is explicitly cancelled.
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
         }
         catch (Exception ex)
         {
             StatusMessage = _localizer["Error_GoogleAuth"];
             Logger.Error(ex, "OAuth Error");
             IsOauthModalVisible = false;
+            // Ensure UI is unlocked on critical authentication failures.
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
         }
         finally
         {
@@ -320,12 +351,15 @@ public partial class SettingsViewModel : ViewModelBase
     {
         IsConfigModalVisible = false;
         StatusMessage = _localizer["Status_DriveAddCancelled"];
+        // Re-enable UI interaction after config cancellation.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
     [RelayCommand]
     private async Task ConfirmOverwriteAsync()
     {
-        IsOverwriteModalVisible = false;
+        // Indicate saving state while keeping the overwrite warning modal open.
+        IsSavingDrive = true;
         await FinalizeAddDrive(overwrite: true);
     }
 
@@ -334,6 +368,8 @@ public partial class SettingsViewModel : ViewModelBase
     {
         IsOverwriteModalVisible = false;
         StatusMessage = _localizer["Status_DriveOverwriteCancelled"];
+        // Restore UI availability after cancelling overwrite operation.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
     [RelayCommand]
@@ -344,7 +380,7 @@ public partial class SettingsViewModel : ViewModelBase
             StatusMessage = _localizer["Error_NameRequired"];
             return;
         }
-
+        
         bool isNameSafe = PendingName.All(c => char.IsLetterOrDigit(c) || c == ' ' || c == '_' || c == '-');
         if (!isNameSafe)
         {
@@ -373,35 +409,56 @@ public partial class SettingsViewModel : ViewModelBase
             IsVerifyingFolder = false;
         }
 
-        IsConfigModalVisible = false;
-        bool emailExists =
-            SavedRemotes.Any(r => r.RcloneRemote.Equals(PendingEmail, StringComparison.OrdinalIgnoreCase));
-        if (emailExists) IsOverwriteModalVisible = true;
-        else await FinalizeAddDrive(overwrite: false);
+        bool emailExists = SavedRemotes.Any(r => r.RcloneRemote.Equals(PendingEmail, StringComparison.OrdinalIgnoreCase));
+        
+        if (emailExists)
+        {
+            // Transition from configuration modal to overwrite warning modal.
+            IsConfigModalVisible = false;
+            IsOverwriteModalVisible = true;
+        }
+        else
+        {
+            // Start the save process directly and show progress in the configuration modal.
+            IsSavingDrive = true;
+            await FinalizeAddDrive(overwrite: false);
+        }
     }
 
     private async Task FinalizeAddDrive(bool overwrite)
     {
         StatusMessage = _localizer["Status_SavingMesh"];
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+        
         try
         {
-            await _driveOrchestrator.AddNewDriveAsync(PendingName, PendingEmail, PendingFolderId, _pendingToken,
-                overwrite);
+            await _driveOrchestrator.AddNewDriveAsync(PendingName, PendingEmail, PendingFolderId, _pendingToken, overwrite);
             await LoadDataAndCheckIntegrityAsync();
             StatusMessage = _localizer["Success_DriveAdded"];
+            
+            // Successfully integrated: Close any open configuration or overwrite modals.
+            IsConfigModalVisible = false;
+            IsOverwriteModalVisible = false;
         }
         catch (Exception ex)
         {
             StatusMessage = _localizer["Error_DriveSaveFailed"];
             Logger.Error(ex, "FinalizeAddDrive failed");
         }
+        finally
+        {
+            IsSavingDrive = false;
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
+        }
     }
 
     // Parameterized method
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanModifyRemote))]
     private void StartDeleteRemote(RemoteInfo item)
     {
         if (item == null) return;
+        // Lock UI before presenting the deletion confirmation dialog.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
         RemoteToProcess = item;
         SelectedRemote = item; // Highlight the selected row in the UI corelation.
         IsDeleteModalVisible = true;
@@ -413,15 +470,18 @@ public partial class SettingsViewModel : ViewModelBase
         IsDeleteModalVisible = false;
         RemoteToProcess = null;
         StatusMessage = _localizer["Status_DriveDeleteCancelled"];
+        // Ensure UI is unlocked when the deletion process is aborted.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
-    // Data source mapped to Process Remote
     [RelayCommand]
     private async Task ConfirmDelete()
     {
         if (RemoteToProcess == null) return;
-        IsDeleteModalVisible = false;
-        StatusMessage = _localizer["Status_RemovingMesh"];
+        
+        // UX Enhancement: Activate progress indicator and keep the modal open during the deletion process.
+        IsProcessingRemoteAction = true;
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
         var targetToRemove = RemoteToProcess;
 
@@ -430,6 +490,9 @@ public partial class SettingsViewModel : ViewModelBase
             await _driveOrchestrator.DeleteDriveAsync(targetToRemove);
             await LoadDataAndCheckIntegrityAsync();
             StatusMessage = string.Format(_localizer["Success_DriveRemoved"], targetToRemove.FriendlyName);
+            
+            // Deletion successful: Close the modal.
+            IsDeleteModalVisible = false;
         }
         catch (Exception ex)
         {
@@ -439,17 +502,34 @@ public partial class SettingsViewModel : ViewModelBase
         finally
         {
             RemoteToProcess = null;
+            IsProcessingRemoteAction = false;
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
         }
     }
 
     // Overload with row parameter
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanModifyRemote))]
     private async Task SetAsMaster(RemoteInfo item)
     {
         if (item == null || item.IsMaster) return;
-        await _driveOrchestrator.SetAsMasterAsync(item);
-        await LoadDataAndCheckIntegrityAsync();
-        StatusMessage = _localizer["Success_MasterChanged"];
+        
+        // Locking UI for atomic metadata update in the Rclone config.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+        
+        try
+        {
+            await _driveOrchestrator.SetAsMasterAsync(item);
+            await LoadDataAndCheckIntegrityAsync();
+            StatusMessage = _localizer["Success_MasterChanged"];
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to set master.");
+        }
+        finally
+        {
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
+        }
     }
 
     [RelayCommand]
@@ -481,6 +561,9 @@ public partial class SettingsViewModel : ViewModelBase
             ".fsbak");
         if (string.IsNullOrEmpty(path)) return;
 
+        // Secure UI lock during configuration data extraction.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+        
         _backupSelectedPath = path;
         _isExportingOperation = true;
         BackupModalTitle = _localizer["Backup_ExportTitle"];
@@ -496,6 +579,9 @@ public partial class SettingsViewModel : ViewModelBase
         var path = await _filePickerService.OpenFileDialogAsync(_localizer["Backup_OpenTitle"], new[] { ".fsbak" });
         if (string.IsNullOrEmpty(path)) return;
 
+        // Establish UI lock before importing a security-sensitive profile.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+        
         _backupSelectedPath = path;
         _isExportingOperation = false;
         BackupModalTitle = _localizer["Backup_ImportTitle"];
@@ -510,6 +596,8 @@ public partial class SettingsViewModel : ViewModelBase
     {
         IsBackupModalVisible = false;
         BackupPassword = string.Empty;
+        // Release UI lock on backup/restore cancellation.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
     [RelayCommand]
@@ -523,7 +611,6 @@ public partial class SettingsViewModel : ViewModelBase
         }
 
         IsBackupProcessing = true;
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
         try
         {

@@ -12,6 +12,10 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
+using System.Net.Http;
+using System.Threading.Tasks;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
 
@@ -40,8 +44,38 @@ public partial class App : Application
 
         var services = new ServiceCollection();
 
-        // Configure resilient HTTP client
-        services.AddHttpClient(Options.DefaultName).AddStandardResilienceHandler();
+        // Configure resilient HTTP client with custom Google API resilience policy
+        services.AddHttpClient(Options.DefaultName)
+            .AddResilienceHandler("GoogleApiResilience", builder =>
+            {
+                builder.AddRetry(new RetryStrategyOptions<HttpResponseMessage>
+                {
+                    // 6 attempts, which combined with exponential backoff provides enough time
+                    // for the Google-side quota (Queries per minute) to reset.
+                    MaxRetryAttempts = 6,
+                    Delay = TimeSpan.FromSeconds(2),
+                    BackoffType = DelayBackoffType.Exponential,
+                    UseJitter = true,
+                    ShouldHandle = args =>
+                    {
+                        // Retry on network errors (e.g., no internet, connection reset)
+                        if (args.Outcome.Exception != null)
+                        {
+                            return new ValueTask<bool>(true);
+                        }
+
+                        var statusCode = args.Outcome.Result?.StatusCode;
+                        
+                        // Key logic: catch internal Google error codes, including the problematic 403 Forbidden.
+                        bool shouldRetry = statusCode == System.Net.HttpStatusCode.Forbidden ||       // Google Rate Limit / Quota Exceeded
+                                           statusCode == System.Net.HttpStatusCode.TooManyRequests || // Standard Rate Limit
+                                           statusCode == System.Net.HttpStatusCode.RequestTimeout ||  // Timeout
+                                           (int?)statusCode >= 500;                                   // Google Server Errors
+
+                        return new ValueTask<bool>(shouldRetry);
+                    }
+                });
+            });
 
         // Infrastructure Services
         services.AddSingleton<IRcloneBootstrapper, RcloneBootstrapper>();

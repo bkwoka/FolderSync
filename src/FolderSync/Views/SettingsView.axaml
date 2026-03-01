@@ -185,145 +185,146 @@
             </Border>
         </Border>
 
+        <!-- LAYER 3: MODAL 2 (DRIVE CONFIGURATION) -->
         <Border IsVisible="{Binding IsConfigModalVisible}" ZIndex="100" Background="#aa000000">
-            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" MinWidth="500">
+            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="500">
                 <StackPanel Spacing="15">
-                    <TextBlock Text="{i18N:Localize Config_Title}" FontSize="20" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextMuted}" />
-                    <TextBlock Text="{i18N:Localize Config_Verified}" Foreground="{StaticResource AccentGreen}"
-                               FontWeight="SemiBold" Margin="0, 0, 0, -5" />
-                    <TextBlock Text="{i18N:Localize Config_NameLabel}" Foreground="{StaticResource TextMuted}"
-                               Margin="0,10,0, -10" />
-                    <TextBox Text="{Binding PendingName}" IsEnabled="{Binding !IsVerifyingFolder}" />
-                    <TextBlock Text="{i18N:Localize Config_RemoteLabel}" Foreground="{StaticResource TextMuted}"
-                               Margin="0,10,0, -10" />
-                    <TextBox Text="{Binding PendingEmail}" IsReadOnly="True" Background="{StaticResource BgApp}"
-                             Foreground="{StaticResource TextMuted}" />
-                    <TextBlock Text="{i18N:Localize Config_FolderLabel}" Foreground="{StaticResource TextMuted}"
-                               Margin="0,10,0, -10" />
+                    <TextBlock Text="{i18N:Localize Config_Title}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" />
+                    <TextBlock Text="{i18N:Localize Config_Verified}" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold" Margin="0, 0, 0, -5" />
+                    <TextBlock Text="{i18N:Localize Config_NameLabel}" Foreground="{StaticResource TextMuted}" Margin="0,10,0, -10" />
+                    <!-- Disabled during verification and read-only during save -->
+                    <TextBox Text="{Binding PendingName}" IsEnabled="{Binding !IsVerifyingFolder}" IsReadOnly="{Binding IsSavingDrive}"/>
+                    <TextBlock Text="{i18N:Localize Config_RemoteLabel}" Foreground="{StaticResource TextMuted}" Margin="0,10,0, -10" />
+                    <TextBox Text="{Binding PendingEmail}" IsReadOnly="True" Background="{StaticResource BgApp}" Foreground="{StaticResource TextMuted}" />
+                    <TextBlock Text="{i18N:Localize Config_FolderLabel}" Foreground="{StaticResource TextMuted}" Margin="0,10,0, -10" />
 
-                    <!-- Folder ID Field (read-only while auto-detecting, disabled while verifying) -->
-                    <TextBox Text="{Binding PendingFolderId}" Watermark="{i18N:Localize Config_FolderWatermark}"
-                             IsEnabled="{Binding !IsVerifyingFolder}" 
-                             IsReadOnly="{Binding IsAutoDetectingFolder}"/>
+                    <!-- Disabled during folder search or database update -->
+                    <TextBox Text="{Binding PendingFolderId}" Watermark="{i18N:Localize Config_FolderWatermark}">
+                        <TextBox.IsEnabled>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="!IsVerifyingFolder"/>
+                                <Binding Path="!IsSavingDrive"/>
+                            </MultiBinding>
+                        </TextBox.IsEnabled>
+                        <TextBox.IsReadOnly>
+                            <Binding Path="IsAutoDetectingFolder" />
+                        </TextBox.IsReadOnly>
+                    </TextBox>
 
-                    <!-- Auto-detection scanning indicator -->
                     <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsAutoDetectingFolder}" HorizontalAlignment="Center">
                         <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentBlue}" Width="80" VerticalAlignment="Center"/>
                         <TextBlock Text="{i18N:Localize Config_AutoDetecting}" Foreground="{StaticResource AccentBlue}" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <!-- Save verification progress bar -->
-                    <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentGreen}"
-                                 IsVisible="{Binding IsVerifyingFolder}" Margin="0,10" />
+                    <!-- Combined progress indicator for Folder verification and Mesh saving -->
+                    <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentGreen}" Margin="0,10">
+                        <ProgressBar.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                                <Binding Path="IsVerifyingFolder"/>
+                                <Binding Path="IsSavingDrive"/>
+                            </MultiBinding>
+                        </ProgressBar.IsVisible>
+                    </ProgressBar>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelConfigCommand}"
-                                Classes="outline" IsEnabled="{Binding !IsVerifyingFolder}"/>
-                        
-                        <!-- Confirm button is hidden during auto-detection and verification -->
-                        <Button Content="{i18N:Localize Btn_Confirm}" Command="{Binding ConfirmConfigCommand}"
-                                Classes="solid" 
-                                IsEnabled="{Binding !IsVerifyingFolder}">
-                            <Button.IsVisible>
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelConfigCommand}" Classes="outline">
+                            <Button.IsEnabled>
+                                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                    <Binding Path="!IsVerifyingFolder"/>
+                                    <Binding Path="!IsSavingDrive"/>
+                                </MultiBinding>
+                            </Button.IsEnabled>
+                        </Button>
+                        <Button Content="{i18N:Localize Btn_Confirm}" Command="{Binding ConfirmConfigCommand}" Classes="solid">
+                            <Button.IsEnabled>
                                 <MultiBinding Converter="{x:Static BoolConverters.And}">
                                     <Binding Path="!IsVerifyingFolder"/>
                                     <Binding Path="!IsAutoDetectingFolder"/>
+                                    <Binding Path="!IsSavingDrive"/>
                                 </MultiBinding>
-                            </Button.IsVisible>
+                            </Button.IsEnabled>
                         </Button>
                     </StackPanel>
                 </StackPanel>
             </Border>
         </Border>
 
+        <!-- LAYER 4: MODAL 3 (OVERWRITE WARNING) -->
         <Border IsVisible="{Binding IsOverwriteModalVisible}" ZIndex="100" Background="#aa000000">
-            <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
-                    CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    MinWidth="400">
+            <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource AccentRed}" BorderThickness="1" CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="400">
                 <StackPanel Spacing="15">
-                    <TextBlock Text="{i18N:Localize Overwrite_Title}" FontSize="20" FontWeight="Bold"
-                               Foreground="{StaticResource AccentRed}" />
+                    <TextBlock Text="{i18N:Localize Overwrite_Title}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentRed}" />
                     <TextBlock Text="{i18N:Localize Overwrite_Desc1}" TextWrapping="Wrap" />
                     <TextBlock Text="{i18N:Localize Overwrite_Desc2}" TextWrapping="Wrap" />
                     <TextBlock Text="{i18N:Localize Overwrite_Desc3}" TextWrapping="Wrap" FontWeight="Bold" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,10,0,0">
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelOverwriteCommand}"
-                                Classes="outline" />
-                        <Button Content="{i18N:Localize Btn_ConfirmOverwrite}"
-                                Command="{Binding ConfirmOverwriteCommand}" Classes="solid" />
+                    
+                    <StackPanel IsVisible="{Binding IsSavingDrive}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center" Margin="0,15,0,0">
+                        <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentRed}" Width="100" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0" IsEnabled="{Binding !IsSavingDrive}">
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelOverwriteCommand}" Classes="outline" />
+                        <Button Content="{i18N:Localize Btn_ConfirmOverwrite}" Command="{Binding ConfirmOverwriteCommand}" Classes="solid" />
                     </StackPanel>
                 </StackPanel>
             </Border>
         </Border>
 
+        <!-- LAYER 5: MODAL 4 (DELETE CONFIRMATION) -->
         <Border IsVisible="{Binding IsDeleteModalVisible}" ZIndex="100" Background="#aa000000">
-            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" MinWidth="450">
+            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="450">
                 <StackPanel Spacing="15">
-                    <TextBlock Text="{i18N:Localize DelConfirm_Title}" FontSize="20" FontWeight="Bold"
-                               Foreground="{StaticResource AccentRed}" />
+                    <TextBlock Text="{i18N:Localize DelConfirm_Title}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentRed}" />
 
                     <Border Background="{StaticResource BgApp}" Padding="15" CornerRadius="4">
                         <StackPanel Spacing="5">
-                            <TextBlock Text="{i18N:Localize DelConfirm_Selected}"
-                                       Foreground="{StaticResource TextMuted}" FontSize="13" />
-
-                            <TextBlock Text="{Binding RemoteToProcess.FriendlyName}" FontWeight="SemiBold"
-                                       FontSize="16" Foreground="{StaticResource TextMain}" />
+                            <TextBlock Text="{i18N:Localize DelConfirm_Selected}" Foreground="{StaticResource TextMuted}" FontSize="13" />
+                            <TextBlock Text="{Binding RemoteToProcess.FriendlyName}" FontWeight="SemiBold" FontSize="16" Foreground="{StaticResource TextMain}" />
                             <TextBlock Text="{Binding RemoteToProcess.Email}" Foreground="{StaticResource TextMuted}" />
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Text="{i18N:Localize DelConfirm_Op1}" TextWrapping="Wrap" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextMuted}" />
-                    <TextBlock Text="{i18N:Localize DelConfirm_Op2}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="{StaticResource TextMuted}" Margin="10,-10,0,0" />
-                    <TextBlock Text="{i18N:Localize DelConfirm_Op3}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="{StaticResource TextMuted}" Margin="10,-10,0,0" />
-                    <TextBlock Text="{i18N:Localize DelConfirm_Op4}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="{StaticResource TextMain}" Margin="10,-10,0,0" />
+                    <TextBlock Text="{i18N:Localize DelConfirm_Op1}" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{StaticResource TextMuted}" />
+                    <TextBlock Text="{i18N:Localize DelConfirm_Op2}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMuted}" Margin="10,-10,0,0" />
+                    <TextBlock Text="{i18N:Localize DelConfirm_Op3}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMuted}" Margin="10,-10,0,0" />
+                    <TextBlock Text="{i18N:Localize DelConfirm_Op4}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMain}" Margin="10,-10,0,0" />
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,10,0,0">
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelDeleteCommand}"
-                                Classes="outline" />
-                        <Button Content="{i18N:Localize Btn_ConfirmDelete}" Command="{Binding ConfirmDeleteCommand}"
-                                Classes="solid" />
+                    <StackPanel IsVisible="{Binding IsProcessingRemoteAction}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center" Margin="0,15,0,0">
+                        <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentRed}" Width="100" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,10,0,0" IsEnabled="{Binding !IsProcessingRemoteAction}">
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelDeleteCommand}" Classes="outline" />
+                        <Button Content="{i18N:Localize Btn_ConfirmDelete}" Command="{Binding ConfirmDeleteCommand}" Classes="solid" />
                     </StackPanel>
                 </StackPanel>
             </Border>
         </Border>
 
+        <!-- LAYER 6: DATA INTEGRITY MODAL (AUTO-REPAIR) -->
         <Border IsVisible="{Binding IsIntegrityModalVisible}" ZIndex="200" Background="#bb000000">
-            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="35" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" MinWidth="550" MaxWidth="600">
+            <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="35" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="550" MaxWidth="600">
                 <StackPanel Spacing="15">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <PathIcon
-                            Data="M12 5.99L19.53 19H4.47L12 5.99M12 2L1 21H23L12 2ZM13 16H11V18H13V16ZM13 10H11V15H13V10Z"
-                            Width="28" Height="28" Foreground="{StaticResource AccentRed}" VerticalAlignment="Center" />
-                        <TextBlock Text="{i18N:Localize Integrity_Title}" FontSize="22" FontWeight="Bold"
-                                   Foreground="{StaticResource AccentRed}" VerticalAlignment="Center" />
+                        <PathIcon Data="M12 5.99L19.53 19H4.47L12 5.99M12 2L1 21H23L12 2ZM13 16H11V18H13V16ZM13 10H11V15H13V10Z" Width="28" Height="28" Foreground="{StaticResource AccentRed}" VerticalAlignment="Center" />
+                        <TextBlock Text="{i18N:Localize Integrity_Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource AccentRed}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <TextBlock Text="{i18N:Localize Integrity_Desc1}" TextWrapping="Wrap" FontSize="14"
-                               Foreground="{StaticResource TextMuted}" />
-                    <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource BgBorder}"
-                            BorderThickness="1" Padding="15" CornerRadius="4">
+                    <TextBlock Text="{i18N:Localize Integrity_Desc1}" TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource TextMuted}" />
+                    <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource BgBorder}" BorderThickness="1" Padding="15" CornerRadius="4">
                         <StackPanel Spacing="5">
-                            <TextBlock Text="{i18N:Localize Integrity_Desc2}" Foreground="{StaticResource TextMuted}"
-                                       FontSize="12" />
-                            <TextBlock Text="{Binding CorruptedRemotesText}" FontWeight="Bold" FontSize="15"
-                                       Foreground="{StaticResource TextMain}" TextWrapping="Wrap" />
+                            <TextBlock Text="{i18N:Localize Integrity_Desc2}" Foreground="{StaticResource TextMuted}" FontSize="12" />
+                            <TextBlock Text="{Binding CorruptedRemotesText}" FontWeight="Bold" FontSize="15" Foreground="{StaticResource TextMain}" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
-                    <TextBlock Text="{i18N:Localize Integrity_Desc3}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="{StaticResource TextMuted}" FontWeight="SemiBold" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="15" Margin="0,10,0,0">
-                        <Button Content="{i18N:Localize Btn_Ignore}" Command="{Binding IgnoreIntegrityCommand}"
-                                Classes="outline" />
-                        <Button Content="{i18N:Localize Btn_AutoRepair}" Command="{Binding AutoRepairIntegrityCommand}"
-                                Classes="solid" />
+                    <TextBlock Text="{i18N:Localize Integrity_Desc3}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMuted}" FontWeight="SemiBold" />
+                    
+                    <StackPanel IsVisible="{Binding IsProcessingRemoteAction}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center" Margin="0,15,0,0">
+                        <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentRed}" Width="100" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="15" Margin="0,10,0,0" IsEnabled="{Binding !IsProcessingRemoteAction}">
+                        <Button Content="{i18N:Localize Btn_Ignore}" Command="{Binding IgnoreIntegrityCommand}" Classes="outline" />
+                        <Button Content="{i18N:Localize Btn_AutoRepair}" Command="{Binding AutoRepairIntegrityCommand}" Classes="solid" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -335,7 +336,7 @@
                 <StackPanel Spacing="15">
                     <TextBlock Text="{Binding BackupModalTitle}" FontSize="20" FontWeight="SemiBold"
                                Foreground="{StaticResource TextMuted}" HorizontalAlignment="Center" />
-                    <TextBlock Text="Binding BackupModalDescription}" TextWrapping="Wrap" FontSize="13"
+                    <TextBlock Text="{Binding BackupModalDescription}" TextWrapping="Wrap" FontSize="13"
                                Foreground="{StaticResource TextMuted}" TextAlignment="Center" />
                     <TextBlock Text="{i18N:Localize Backup_PasswordLabel}" FontWeight="SemiBold"
                                Foreground="{StaticResource TextMuted}" />

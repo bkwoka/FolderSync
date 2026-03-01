@@ -237,6 +237,9 @@ public partial class BrowserViewModel : ViewModelBase
     {
         if (!CanModify) return;
 
+        // UI Lockdown: Prevent any background process interference while the delete modal is active.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+
         _fileToProcess = item;
         DeleteTargetName = item.Name;
         DeleteAttachmentsToggle = false;
@@ -253,6 +256,8 @@ public partial class BrowserViewModel : ViewModelBase
     {
         IsDeleteModalVisible = false;
         _fileToProcess = null;
+        // Restore UI availability after the cancellation of the deletion process.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
     /// <summary>
@@ -262,11 +267,15 @@ public partial class BrowserViewModel : ViewModelBase
     [RelayCommand]
     private async Task ConfirmDelete()
     {
-        if (_fileToProcess == null || !CanModify) return;
+        if (_fileToProcess == null || !CanModify)
+        {
+            // Failsafe UI release if state is inconsistent.
+            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
+            return;
+        }
 
         IsDeleting = true;
         StatusMessage = _localizer["Status_DeletingMesh"];
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
         // GUARD: Prevent indefinite UI lock by imposing a 2-minute hard timeout on Google API requests
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -316,6 +325,9 @@ public partial class BrowserViewModel : ViewModelBase
     {
         if (!CanModify) return;
 
+        // Secure UI State: Lock interface to ensure atomic rename operation lifecycle.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
+
         _fileToProcess = item;
         NewFileName = Path.GetFileNameWithoutExtension(item.Name);
         RenameErrorMessage = string.Empty;
@@ -336,6 +348,8 @@ public partial class BrowserViewModel : ViewModelBase
         _fileToProcess = null;
         RenameErrorMessage = string.Empty;
         IsRenaming = false;
+        // Release global UI lock after renaming exit.
+        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
     }
 
     [RelayCommand]
@@ -364,7 +378,7 @@ public partial class BrowserViewModel : ViewModelBase
         RenameErrorMessage = string.Empty;
         string trimmedName = NewFileName.Trim();
 
-        // Use constant
+        // Length validation against system constants.
         if (trimmedName.Length > AppConstants.MaxFileNameLength)
         {
             RenameErrorMessage = _localizer["Error_NameTooLong"];
@@ -376,7 +390,7 @@ public partial class BrowserViewModel : ViewModelBase
 
         if (_fileToProcess.Name == newFullName)
         {
-            CancelRename();
+            CancelRename(); // Centralized exit handles UI unlocking.
             return;
         }
 
@@ -387,7 +401,6 @@ public partial class BrowserViewModel : ViewModelBase
         }
 
         IsRenaming = true;
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
 
         // Added timeout to rename operation
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));

@@ -17,34 +17,58 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     /// <inheritdoc />
-    public async Task GrantMeshPermissionsAsync(RemoteInfo newRemote, List<RemoteInfo> existingRemotes,
-        CancellationToken cancellationToken = default)
+    public async Task GrantMeshPermissionsAsync(RemoteInfo newRemote, List<RemoteInfo> existingRemotes, CancellationToken cancellationToken = default)
     {
-        foreach (var existing in existingRemotes)
+        Logger.Info("Initiating MESH permission distribution for account: {0}", newRemote.FriendlyName);
+        
+        // Compensation registry for the Saga pattern mechanism
+        var rollbackActions = new List<Func<Task>>();
+
+        try
         {
-            // Share new remote's folder with existing remote's account
-            try
+            foreach (var existing in existingRemotes)
             {
-                await googleApi.ShareFolderAsync(newRemote.RcloneRemote, newRemote.FolderId,
-                    existing.Email ?? existing.RcloneRemote, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // PHASE 1: Share the new drive's folder with the existing account
+                string existingTargetEmail = existing.Email ?? existing.RcloneRemote;
+                await googleApi.ShareFolderAsync(newRemote.RcloneRemote, newRemote.FolderId, existingTargetEmail, cancellationToken);
+                
+                // Register compensation action in case of failure in subsequent steps
+                rollbackActions.Add(() => googleApi.RevokePermissionAsync(newRemote.RcloneRemote, newRemote.FolderId, existingTargetEmail, CancellationToken.None));
+
+                // PHASE 2: Share the existing drive's folder with the new account
+                string newTargetEmail = newRemote.Email ?? newRemote.RcloneRemote;
+                await googleApi.ShareFolderAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, cancellationToken);
+                
+                // Register compensation action
+                rollbackActions.Add(() => googleApi.RevokePermissionAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, CancellationToken.None));
             }
-            catch (Exception ex)
+            
+            Logger.Info("Successfully distributed all MESH permissions for: {0}", newRemote.FriendlyName);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Critical error during MESH permission granting. Rolling back {0} successful share operations.", rollbackActions.Count);
+
+            // Compensation mechanism: revoke permissions that were successfully granted before the error occurred.
+            // This prevents an architectural "Split-Brain" scenario where a drive has partial access to the mesh.
+            foreach (var rollback in rollbackActions)
             {
-                Logger.Warn(ex, "Failed to share folder from {NewRemote} to {ExistingRemote}", newRemote.FriendlyName,
-                    existing.FriendlyName);
+                try
+                {
+                    await rollback();
+                }
+                catch (Exception rollbackEx)
+                {
+                    // Fail-safe for the rollback loop: one failed compensation should not stop others.
+                    Logger.Warn(rollbackEx, "Warning: Failed to revoke permission during the rollback procedure.");
+                }
             }
 
-            // Share existing remote's folder with new remote's account
-            try
-            {
-                await googleApi.ShareFolderAsync(existing.RcloneRemote, existing.FolderId,
-                    newRemote.Email ?? newRemote.RcloneRemote, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn(ex, "Failed to share folder from {ExistingRemote} to {NewRemote}", existing.FriendlyName,
-                    newRemote.FriendlyName);
-            }
+            // Propagate the exception to be handled by higher-level services (e.g., DriveOrchestratorService),
+            // which may need to remove the faulty drive configuration from the Rclone engine.
+            throw;
         }
     }
 
