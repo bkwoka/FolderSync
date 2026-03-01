@@ -106,16 +106,16 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                 // ExitCode 4 = Object (file) not found
                 if (process.ExitCode == 3 || process.ExitCode == 4)
                 {
-                    Logger.Debug(
-                        "Rclone reported object not found (Code {0}). This is expected during blind operations.",
-                        process.ExitCode);
+                    Logger.Debug("Rclone reported object not found (Code {0}).", process.ExitCode);
                 }
                 else
                 {
                     Logger.Warn("Rclone returned error code {0}: {1}", process.ExitCode, error);
                 }
 
-                throw new InvalidOperationException($"Rclone exited with code {process.ExitCode}: {error}");
+                // Refine the error message with contextual information before throwing.
+                string refinedError = TranslateRcloneError(error, arguments);
+                throw new InvalidOperationException(refinedError);
             }
 
             return output;
@@ -288,5 +288,36 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
             Logger.Warn(ex, "Failed to retrieve the list of configured Rclone remotes.");
             return [];
         }
+    }
+
+    /// <summary>
+    /// Translates raw Rclone error messages into user-friendly, context-aware technical descriptions.
+    /// Utilizes regular expressions to correlate error patterns with the original command arguments.
+    /// </summary>
+    private string TranslateRcloneError(string rawError, string[] arguments)
+    {
+        // Intercept Google Drive API 404 (File not found) errors
+        if (rawError.Contains("Error 404") && rawError.Contains("File not found"))
+        {
+            string commandLine = string.Join(" ", arguments);
+
+            // Extract the target folder ID from the Rclone connection string
+            var folderMatch = Regex.Match(commandLine, @"root_folder_id=([a-zA-Z0-9_-]+)");
+
+            if (folderMatch.Success)
+            {
+                string folderIdFromArgs = folderMatch.Groups[1].Value;
+
+                // If the missing resource ID matches the root folder ID provided in the arguments
+                if (rawError.Contains(folderIdFromArgs))
+                {
+                    return $"CRITICAL FOLDER MISSING: The configured Google AI Studio base directory (ID: {folderIdFromArgs}) " +
+                           "could not be found. The folder may have been deleted or the access permission has been revoked.";
+                }
+            }
+        }
+
+        // Fallback to the original error message if no specific pattern is identified
+        return rawError;
     }
 }
