@@ -96,22 +96,32 @@ public class UpdateServiceTests
         result!.IsUpdateAvailable.Should().BeFalse("a downgrade/rollback version must not be considered an update");
     }
 
-    [Theory]
-    [InlineData(@"{ ""tag_name"": ""v1.0.0-beta"", ""html_url"": ""https://github.com"" }")]
-    [InlineData(@"{ ""tag_name"": ""1.2.3"", ""html_url"": ""https://github.com"" }")]
-    public async Task CheckForUpdates_WithNonStandardTagFormats_ShouldHandleGracefully(string json)
+    [Fact]
+    public async Task CheckForUpdates_WithPrereleaseTag_ShouldReturnNull()
     {
-        // Arrange
+        // Arrange – pre-release versions (containing '-') are ignored to avoid notifying users about unstable releases
+        string json = @"{ ""tag_name"": ""v1.0.0-beta"", ""html_url"": ""https://github.com"" }";
         SetupHttpResponse(HttpStatusCode.OK, json);
 
         // Act
         var result = await _sut.CheckForUpdatesAsync();
 
-        // Assert – pre-release and non-prefixed tags must be handled without throwing exceptions.
-        if (result != null)
-        {
-            result.IsUpdateAvailable.Should().BeFalse("pre-release or non-standard tags should not trigger update notifications");
-        }
+        // Assert
+        result.Should().BeNull("pre-release versions must be explicitly ignored to ensure update stability");
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_WithTagMissingVPrefix_ShouldReturnNull()
+    {
+        // Arrange – version tags without the 'v' prefix are ignored to maintain consistency with GitHub release conventions
+        string json = @"{ ""tag_name"": ""1.2.3"", ""html_url"": ""https://github.com"" }";
+        SetupHttpResponse(HttpStatusCode.OK, json);
+
+        // Act
+        var result = await _sut.CheckForUpdatesAsync();
+
+        // Assert
+        result.Should().BeNull("tags lacking the 'v' prefix must be ignored to prevent parsing errors");
     }
 
     // ─── HTTP Resilience & Error Handling ──────────────────────────────────────
@@ -156,12 +166,11 @@ public class UpdateServiceTests
         // Arrange
         SetupHttpResponse(HttpStatusCode.OK, "", new HttpRequestException("No connection"));
 
-        // Act & Assert
-        Func<Task> act = () => _sut.CheckForUpdatesAsync();
-        await act.Should().NotThrowAsync();
-        
+        // Act
         var result = await _sut.CheckForUpdatesAsync();
-        result.Should().BeNull();
+
+        // Assert
+        result.Should().BeNull("network exceptions must be caught gracefully and return null to prevent application crashes");
     }
 
     [Fact]
