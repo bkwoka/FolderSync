@@ -41,33 +41,47 @@
             <!-- LOG OUTPUT: Real-time synchronization activity visualization -->
             <Border Grid.Row="1" Background="{StaticResource BgCard}" BorderBrush="{StaticResource BgBorder}"
                     BorderThickness="1" CornerRadius="4" Padding="15">
-                <ScrollViewer x:Name="LogScroll">
+                <ScrollViewer x:Name="LogScroll" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Logs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="helpers:LogEntry">
-                                <StackPanel Orientation="Horizontal" Margin="{Binding Margin}" MinHeight="22">
-                                    <PathIcon Data="{Binding IconPath}"
+                                
+                                <Grid Margin="{Binding Margin}" MinHeight="22">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/> <!-- Column 0: Icon -->
+                                        <ColumnDefinition Width="*"/>    <!-- Column 1: Text (takes remaining space) -->
+                                        <ColumnDefinition Width="45"/> <!-- Column 2: Spinning activity indicator -->
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Status indicator icon -->
+                                    <PathIcon Grid.Column="0" 
+                                              Data="{Binding IconPath}"
                                               Foreground="{Binding IconColor}"
                                               IsVisible="{Binding HasIcon}"
                                               Width="10" Height="10"
                                               Margin="0,0,8,1"
                                               VerticalAlignment="Center" />
 
-                                    <TextBlock Text="{Binding Text}"
+                                    <!-- Log entry content with automated line splitting -->
+                                    <TextBlock Grid.Column="1" 
+                                               Text="{Binding Text}"
                                                Foreground="{StaticResource TextMuted}"
                                                FontFamily="Monospace"
                                                FontSize="13"
-                                               VerticalAlignment="Center" />
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap" />
 
-
-                                    <PathIcon Classes="spinning"
+                                    <!-- Indeterminate progress spinner -->
+                                    <PathIcon Grid.Column="2" 
+                                              Classes="spinning"
                                               Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 1,1 4,12A8,8 0 0,1 12,4Z"
                                               Foreground="{StaticResource AccentBlue}"
                                               Width="12" Height="12"
                                               Margin="10,0,0,0"
                                               VerticalAlignment="Center"
                                               IsVisible="{Binding IsActive}" />
-                                </StackPanel>
+                                </Grid>
+                                
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
