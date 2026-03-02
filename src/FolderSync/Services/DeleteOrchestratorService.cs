@@ -53,7 +53,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             }
         }
 
-        var allMasterDirs = await rclone.ListItemsAsync($"{masterRemote.RcloneRemote}:", true, cancellationToken) ?? new List<RcloneItem>();
+        var allMasterDirs = await rclone.ListItemsAsync($"{masterRemote.RcloneRemote}:", true, cancellationToken);
         var targetDirs = allMasterDirs.Where(d => d.Name == AppConstants.TargetFolderName).ToList();
         if (targetDirs.All(d => d.Id != masterRemote.FolderId))
         {

@@ -98,6 +98,8 @@ public class SyncConsolidateStageHistoryFileTests
         // Arrange
         SetupTwoFolders();
         SetupOrphanFiles(new List<RcloneItem> { new RcloneItem("h1", historyFileName, DateTime.UtcNow, false, "application/json") });
+        _mockRclone.Setup(x => x.ListItemsAsync(It.Is<string>(s => s.Contains(TargetId)), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RcloneItem>());
 
         // Act
         await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
@@ -117,6 +119,8 @@ public class SyncConsolidateStageHistoryFileTests
         // Arrange
         SetupTwoFolders();
         SetupOrphanFiles(new List<RcloneItem>());
+        _mockRclone.Setup(x => x.ListItemsAsync(It.Is<string>(s => s.Contains(TargetId)), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RcloneItem>());
 
         // Act
         await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);

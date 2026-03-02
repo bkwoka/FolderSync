@@ -26,7 +26,7 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
     {
         cancellationToken.ThrowIfCancellationRequested();
         string rootPath = $"{remote.RcloneRemote},root_folder_id={remote.FolderId}:";
-        var allFiles = await rclone.ListItemsAsync(rootPath, false, cancellationToken) ?? new List<RcloneItem>();
+        var allFiles = await rclone.ListItemsAsync(rootPath, false, cancellationToken);
         var conversationFiles = allFiles.Where(f => f.IsConversation).ToList();
 
         // Identify groups of files that share the exact same name

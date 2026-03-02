@@ -43,7 +43,7 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
                 await googleApi.ShareFolderAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, cancellationToken);
                 
                 // Register compensation action
-                rollbackActions.Add(() => googleApi.RevokePermissionAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, cancellationToken));
+                rollbackActions.Add(() => googleApi.RevokePermissionAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, CancellationToken.None));
             }
             
             Logger.Info("Successfully distributed all MESH permissions for: {0}", newRemote.FriendlyName);

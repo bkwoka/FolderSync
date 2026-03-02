@@ -87,6 +87,10 @@ public class FoundationGapTests : IDisposable
         var r = new RemoteInfo("M", "rm", "f1");
         var list = new List<RemoteInfo> { r };
 
+        mockRclone
+            .Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RcloneItem>());
+
         // Act
         await sut.DeleteConversationAsync("test.prompt", false, r, list, CancellationToken.None);
 
