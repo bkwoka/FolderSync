@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using FolderSync.Exceptions;
 using FolderSync.Models;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
@@ -155,7 +156,7 @@ public class DeleteOrchestratorExtendedTests
     }
 
     [Fact]
-    public async Task DeleteConversation_WhenOneSlaveDeleteFails_ShouldContinueWithOtherSlaves()
+    public async Task DeleteConversation_WhenOneSlaveDeleteFails_ShouldThrowPartialDeletionException()
     {
         // Arrange
         _mockRclone
@@ -164,16 +165,31 @@ public class DeleteOrchestratorExtendedTests
                 null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()))
             .ThrowsAsync(new HttpRequestException("Slave unreachable"));
 
-        // Act
-        await _sut.DeleteConversationAsync("file.prompt", false, _master, _allRemotes, CancellationToken.None);
+        // Act & Assert
+        var act = async () => await _sut.DeleteConversationAsync("file.prompt", false, _master, _allRemotes, CancellationToken.None);
 
-        // Assert
+        var ex = await act.Should().ThrowAsync<PartialDeletionException>();
+        ex.Which.FailedRemotes.Should().Contain("Slave1");
+
         _mockRclone.Verify(
             x => x.ExecuteCommandAsync(
                 It.Is<string[]>(a => a[0] == "deletefile" && a[1].Contains("fs2")),
                 null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()),
             Times.Once,
-            "failure to delete from one remote must not prevent deletion from others");
+            "failure on one slave must NOT stop the propagation to other slaves, even if we throw at the end");
+    }
+
+    [Fact]
+    public async Task DeleteConversation_WhenFileNotFound_ShouldBeIdempotentAndNotThrow()
+    {
+        // Arrange - Rclone returns "not found" error
+        _mockRclone
+            .Setup(x => x.ExecuteCommandAsync(It.IsAny<string[]>(), null, It.IsAny<CancellationToken>(), null))
+            .ThrowsAsync(new InvalidOperationException("Rclone: file not found (404)"));
+
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("ghost.prompt", false, _master, _allRemotes, CancellationToken.None))
+            .Should().NotThrowAsync("idempotency: if the file is already gone, it is considered a success");
     }
 
     [Fact]

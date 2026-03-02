@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
+using FolderSync.Exceptions;
 using FolderSync.Messages;
 using FolderSync.Models;
 using FolderSync.Services;
@@ -300,6 +301,21 @@ public partial class BrowserViewModel : ViewModelBase
                 StatusMessage = _localizer["Success_ConversationDeleted"];
                 IsDeleteModalVisible = false;
             }
+        }
+        catch (PartialDeletionException partialEx)
+        {
+            // Handle partial success: inform the user which remotes failed
+            StatusMessage = string.Format(_localizer["Error_PartialDelete"], string.Join(", ", partialEx.FailedRemotes));
+            Logger.Warn("Partial deletion occurred. Leftovers on: {0}", string.Join(", ", partialEx.FailedRemotes));
+            
+            // If the currently viewed remote was successful, remove it from the list anyway to reflect local state
+            if (_fileToProcess != null && SelectedRemote != null && !partialEx.FailedRemotes.Contains(SelectedRemote.FriendlyName))
+            {
+                _allFetchedFiles.Remove(_fileToProcess);
+                Files.Remove(_fileToProcess);
+            }
+            
+            IsDeleteModalVisible = false;
         }
         catch (OperationCanceledException)
         {

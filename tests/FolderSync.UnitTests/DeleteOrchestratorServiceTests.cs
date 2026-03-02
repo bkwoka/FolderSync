@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using FolderSync.Exceptions;
 using FolderSync.Models;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
@@ -120,7 +121,7 @@ public class DeleteOrchestratorServiceTests
     }
 
     [Fact]
-    public async Task DeleteConversation_WhenAllRemotesFail_ShouldHandleGracefully()
+    public async Task DeleteConversation_WhenAllRemotesFail_ShouldThrowPartialDeletionException()
     {
         // Arrange
         _mockRclone.Setup(x => x.ExecuteCommandAsync(It.IsAny<string[]>(), null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()))
@@ -128,7 +129,7 @@ public class DeleteOrchestratorServiceTests
 
         // Act & Assert
         await _sut.Awaiting(x => x.DeleteConversationAsync("test.prompt", false, _masterRemote, _allRemotes, CancellationToken.None))
-            .Should().NotThrowAsync("exceptions encountered during prompt file deletion must be isolated per-remote");
+            .Should().ThrowAsync<PartialDeletionException>("exceptions encountered during prompt file deletion must be collected and thrown as a partial failure");
     }
 
     [Theory]

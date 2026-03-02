@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using FolderSync.Exceptions;
 using FolderSync.Models;
 using FolderSync.Services.Interfaces;
 using NLog;
@@ -62,6 +64,9 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
         }
 
         // PHASE 2: Permanent Annihilation of the .prompt file (Hard Delete)
+        // Thread-safe collection to track failures across parallel tasks.
+        var failedRemotes = new ConcurrentBag<string>();
+
         // Scatter-Gather parallel deletion from Master folders
         var masterDeleteTasks = targetDirs.Select(async dir =>
         {
@@ -76,9 +81,15 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             {
                 throw;
             }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                // IDEMPOTENCY: If the file is already gone, consider it a success.
+                Logger.Debug("File {FileName} was already absent in master directory {DirId}.", fileName, dir.Id);
+            }
             catch (Exception ex)
             {
-                Logger.Trace(ex, "Failed to permanently delete file from master directory {DirId}.", dir.Id);
+                Logger.Error(ex, "Failed to permanently delete file from master directory {DirId}.", dir.Id);
+                failedRemotes.Add(masterRemote.FriendlyName);
             }
         });
         await Task.WhenAll(masterDeleteTasks);
@@ -97,12 +108,26 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             {
                 throw;
             }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                // IDEMPOTENCY: File deleted earlier or never reached this drive.
+                Logger.Debug("File {FileName} was already absent on slave {RemoteName}.", fileName, slave.FriendlyName);
+            }
             catch (Exception ex)
             {
-                Logger.Trace(ex, "Failed to permanently delete file from slave drive {RemoteName}.", slave.FriendlyName);
+                Logger.Error(ex, "Failed to permanently delete file from slave drive {RemoteName}.", slave.FriendlyName);
+                failedRemotes.Add(slave.FriendlyName);
             }
         });
         await Task.WhenAll(slaveDeleteTasks);
+
+        // If ANY conversation file deletion failed, we throw a domain exception to inform the UI
+        // about leftovers (ghost files) across the mesh.
+        if (!failedRemotes.IsEmpty)
+        {
+            var uniqueFailures = failedRemotes.Distinct().ToList();
+            throw new PartialDeletionException(uniqueFailures);
+        }
 
         Logger.Info("Permanent deletion of .prompt file '{FileName}' completed across MESH.", fileName);
 
