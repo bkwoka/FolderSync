@@ -109,11 +109,9 @@ public class SyncConsolidateStageTests
         _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                    .ThrowsAsync(new InvalidOperationException("Rclone I/O error"));
 
-        // Act
-        Func<Task> act = async () => await _sut.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
-
-        // Assert
+        // Act & Assert
         // I/O failures should be intercepted and logged without terminating the entire synchronization pipeline.
-        await act.Should().NotThrowAsync();
+        await _sut.Awaiting(x => x.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None))
+            .Should().NotThrowAsync();
     }
 }

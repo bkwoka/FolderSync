@@ -1,5 +1,6 @@
 using System;
 using FolderSync.Helpers;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -23,19 +24,24 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
     /// <inheritdoc />
     public async Task RunAsync(RemoteInfo remote, IProgress<SyncProgressEvent> uiLogger, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string rootPath = $"{remote.RcloneRemote},root_folder_id={remote.FolderId}:";
-        var allFiles = await rclone.ListItemsAsync(rootPath, false, cancellationToken);
+        var allFiles = await rclone.ListItemsAsync(rootPath, false, cancellationToken) ?? new List<RcloneItem>();
         var conversationFiles = allFiles.Where(f => f.IsConversation).ToList();
 
         // Identify groups of files that share the exact same name
         var duplicates = conversationFiles.GroupBy(f => f.Name).Where(g => g.Count() > 1).ToList();
 
-        if (duplicates.Any())
+        if (duplicates.Count > 0)
         {
-            Logger.Warn("Sanity Check: Found {DuplicateCount} conversation name collisions in root of {RemoteName}. Initiating automatic resolution.", duplicates.Count, remote.FriendlyName);
-            
+            int count = duplicates.Count;
+            string remoteName = remote.FriendlyName;
+            Logger.Warn("Sanity Check: Found {0} conversation name collisions in root of {1}. Initiating automatic resolution.", count, remoteName);
+
             var id = Guid.NewGuid();
-            uiLogger.Report(new SyncProgressEvent(id, $"    {string.Format(localizer["Log_Stage0_FixingDuplicates"], remote.FriendlyName, duplicates.Count)}", false));
+            string template = localizer["Log_Stage0_FixingDuplicates"];
+            string localizedMsg = string.Format(System.Globalization.CultureInfo.CurrentCulture, template, remoteName, count);
+            uiLogger.Report(new SyncProgressEvent(id, $"    {localizedMsg}", false));
             
             foreach (var group in duplicates)
             {
@@ -56,8 +62,19 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
                     
                     Logger.Info("Renaming duplicate conversation instance to avoid collision: '{OldName}' -> '{NewName}'", copy.Name, newName);
                     
-                    // Use server-side 'moveto' for instant renaming without data transfer
-                    await rclone.ExecuteCommandAsync(new[] { "moveto", $"{rootPath}{copy.Name}", $"{rootPath}{newName}", "--drive-server-side-across-configs" }, null, cancellationToken);
+                    try
+                    {
+                        // Use server-side 'moveto' for instant renaming without data transfer
+                        await rclone.ExecuteCommandAsync(new[] { "moveto", $"{rootPath}{copy.Name}", $"{rootPath}{newName}", "--drive-server-side-across-configs" }, null, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex, "Failed to resolve collision for '{0}' on {1}. Skipping this instance.", copy.Name, remote.FriendlyName);
+                    }
                 }
             }
             uiLogger.Report(new SyncProgressEvent(id, "", true));

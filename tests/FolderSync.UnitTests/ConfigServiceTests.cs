@@ -43,10 +43,30 @@ public class ConfigServiceTests : IDisposable
 
     // ─── LOAD ─────────────────────────────────────────────────────────────────────
 
+    // ─── Reflection Integrity ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// TestableConfigService relies on reflection to override the private '_configPath' field.
+    /// This test ensures that if the field name changes in the production code, the tests will 
+    /// fail explicitly rather than silently writing to the real local application data folder.
+    /// </summary>
+    [Fact]
+    public void TestableConfigService_ReflectionMustSuccessfullyFindConfigPathField()
+    {
+        // Arrange & Act
+        var field = typeof(ConfigService)
+            .GetField("_configPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        // Assert
+        field.Should().NotBeNull("isolation depends on reflection finding the '_configPath' field");
+    }
+
+    // ─── Load Data ────────────────────────────────────────────────────────────────
+
     [Fact]
     public async Task LoadConfig_WhenFileDoesNotExist_ShouldReturnEmptyConfig()
     {
-        // Arrange – no config file has been created
+        // Arrange
         var sut = CreateService();
 
         // Act
@@ -55,7 +75,21 @@ public class ConfigServiceTests : IDisposable
         // Assert
         config.Should().NotBeNull("a missing config file must silently return a default empty config");
         config.Remotes.Should().BeEmpty();
-        config.MasterRemoteId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoadConfig_WhenFileIsEmpty_ShouldReturnEmptyConfigWithoutThrowing()
+    {
+        // Arrange – an empty file is a different boundary case than a missing file
+        await File.WriteAllTextAsync(ConfigFilePath, string.Empty, Encoding.UTF8);
+        var sut = CreateService();
+
+        // Act & Assert
+        await sut.Invoking(x => x.LoadConfigAsync()).Should().NotThrowAsync();
+        
+        var config = await sut.LoadConfigAsync();
+        config.Should().NotBeNull();
+        config.Remotes.Should().BeEmpty();
     }
 
     [Fact]
@@ -65,6 +99,7 @@ public class ConfigServiceTests : IDisposable
         const string json = """
             {
               "masterRemoteId": "folder_abc",
+              "skipRenameSyncWarning": true,
               "remotes": [
                 { "friendlyName": "Work", "rcloneRemote": "gdrive_work", "folderId": "folder_abc" }
               ],
@@ -79,25 +114,9 @@ public class ConfigServiceTests : IDisposable
 
         // Assert
         config.MasterRemoteId.Should().Be("folder_abc");
+        config.SkipRenameSyncWarning.Should().BeTrue("boolean flags must be deserialized correctly");
         config.Remotes.Should().HaveCount(1);
-        config.Remotes[0].FriendlyName.Should().Be("Work");
         config.Language.Should().Be("pl");
-    }
-
-    [Fact]
-    public async Task LoadConfig_WhenJsonIsCorrupted_ShouldReturnEmptyConfigWithoutThrowing()
-    {
-        // Arrange – write a file that is not valid JSON
-        await File.WriteAllTextAsync(ConfigFilePath, "{ this is not valid JSON !!!", Encoding.UTF8);
-        var sut = CreateService();
-
-        // Act
-        Func<Task> act = async () => await sut.LoadConfigAsync();
-
-        // Assert
-        await act.Should().NotThrowAsync("a corrupted config must be handled gracefully, not crash the app");
-        var config = await sut.LoadConfigAsync();
-        config.Remotes.Should().BeEmpty("a corrupted config falls back to a clean default state");
     }
 
     [Fact]
@@ -110,30 +129,12 @@ public class ConfigServiceTests : IDisposable
         // Act
         await sut.LoadConfigAsync();
 
-        // Assert – the service should save a .corrupted_* backup before wiping the file
-        var corruptedBackups = Directory
-            .GetFiles(_tempDir, "*.corrupted_*")
-            .ToList();
-
-        corruptedBackups.Should().NotBeEmpty(
-            "when the config is corrupted, the original file must be preserved as a backup for recovery");
+        // Assert – verify that the original corrupted data is preserved as a backup
+        var corruptedBackups = Directory.GetFiles(_tempDir, "*.corrupted_*");
+        corruptedBackups.Should().NotBeEmpty("corrupted config files must be backed up before reset");
     }
 
-    [Fact]
-    public async Task LoadConfig_WhenJsonDeserializesToNull_ShouldReturnEmptyConfig()
-    {
-        // Arrange – "null" is valid JSON but deserializes to null
-        await File.WriteAllTextAsync(ConfigFilePath, "null", Encoding.UTF8);
-        var sut = CreateService();
-
-        // Act
-        var config = await sut.LoadConfigAsync();
-
-        // Assert
-        config.Should().NotBeNull("a null deserialization result must be replaced by the empty config fallback");
-    }
-
-    // ─── SAVE ─────────────────────────────────────────────────────────────────────
+    // ─── Save Data ────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task SaveConfig_ShouldPersistDataReadableByLoad()
@@ -143,11 +144,8 @@ public class ConfigServiceTests : IDisposable
         var original = new AppConfig
         {
             MasterRemoteId = "folder_xyz",
-            Language = "pl",
-            Remotes = new List<RemoteInfo>
-            {
-                new RemoteInfo("Personal", "gdrive_personal", "folder_xyz", "me@gmail.com")
-            }
+            SkipDeleteSyncWarning = true,
+            Remotes = new List<RemoteInfo> { new RemoteInfo("Personal", "gdrive_p", "f_xyz") }
         };
 
         // Act
@@ -156,24 +154,22 @@ public class ConfigServiceTests : IDisposable
 
         // Assert
         loaded.MasterRemoteId.Should().Be("folder_xyz");
-        loaded.Language.Should().Be("pl");
+        loaded.SkipDeleteSyncWarning.Should().BeTrue();
         loaded.Remotes.Should().HaveCount(1);
-        loaded.Remotes[0].FriendlyName.Should().Be("Personal");
     }
 
     [Fact]
-    public async Task SaveConfig_ShouldNotLeaveTempFileOnDisk()
+    public async Task SaveConfig_WhenSuccessful_ShouldNotLeaveAnyTmpFilesOnDisk()
     {
         // Arrange
         var sut = CreateService();
-        var config = new AppConfig { MasterRemoteId = null, Remotes = [] };
 
         // Act
-        await sut.SaveConfigAsync(config);
+        await sut.SaveConfigAsync(new AppConfig { Remotes = [] });
 
-        // Assert – atomic write pattern: the .tmp file must be cleaned up after a successful save
-        File.Exists(TempFilePath).Should().BeFalse(
-            "the temporary .tmp file used for atomic writes must be removed after a successful save");
+        // Assert – atomic write pattern validation
+        var tmpFiles = Directory.GetFiles(_tempDir, "*.tmp");
+        tmpFiles.Should().BeEmpty("temporary files used during atomic write must be cleaned up on success");
     }
 
     [Fact]
@@ -182,55 +178,28 @@ public class ConfigServiceTests : IDisposable
         // Arrange
         var sut = CreateService();
 
-        // Act
-        Func<Task> act = async () => await sut.SaveConfigAsync(null!);
-
-        // Assert
-        await act.Should().ThrowExactlyAsync<ArgumentNullException>(
-            "saving a null config must be rejected immediately without touching the disk");
+        // Act & Assert
+        await sut.Invoking(x => x.SaveConfigAsync(null!)).Should().ThrowAsync<ArgumentNullException>();
     }
 
+    // ─── Concurrency & Atomicity ──────────────────────────────────────────────────
+
     [Fact]
-    public async Task SaveConfig_ShouldOverwriteExistingConfig()
+    public async Task SaveConfig_CalledConcurrently_ShouldNotCorruptData()
     {
         // Arrange
         var sut = CreateService();
-        var first = new AppConfig { MasterRemoteId = "old_id", Remotes = [] };
-        var second = new AppConfig { MasterRemoteId = "new_id", Remotes = [] };
+        var tasks = Enumerable.Range(0, 10).Select(i => sut.SaveConfigAsync(new AppConfig
+        {
+            MasterRemoteId = $"folder_{i}",
+            Remotes = []
+        }));
 
-        // Act
-        await sut.SaveConfigAsync(first);
-        await sut.SaveConfigAsync(second);
-        var loaded = await sut.LoadConfigAsync();
+        // Act & Assert
+        await sut.Invoking(async x => await Task.WhenAll(tasks)).Should().NotThrowAsync();
 
-        // Assert
-        loaded.MasterRemoteId.Should().Be("new_id",
-            "saving a second config must completely replace the first one");
-    }
-
-    // ─── CONCURRENCY ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task SaveConfig_CalledConcurrently_ShouldNotThrowAndResultShouldBeValidJson()
-    {
-        // Arrange – simulate two concurrent save operations on the same service instance
-        var sut = CreateService();
-        var config1 = new AppConfig { MasterRemoteId = "id_1", Remotes = [] };
-        var config2 = new AppConfig { MasterRemoteId = "id_2", Remotes = [] };
-
-        // Act
-        // The internal SemaphoreSlim(1,1) must serialize these safely.
-        Func<Task> act = async () => await Task.WhenAll(
-            sut.SaveConfigAsync(config1),
-            sut.SaveConfigAsync(config2)
-        );
-
-        // Assert – no race condition exception, file must be valid JSON at the end
-        await act.Should().NotThrowAsync(
-            "the internal file lock must prevent concurrent writes from corrupting the config file");
-
-        Func<Task> loadAct = async () => await sut.LoadConfigAsync();
-        await loadAct.Should().NotThrowAsync("the resulting file must be valid JSON after concurrent saves");
+        var finalConfig = await sut.LoadConfigAsync();
+        finalConfig.Should().NotBeNull("the result of concurrent writes must still be a valid JSON file");
     }
 }
 

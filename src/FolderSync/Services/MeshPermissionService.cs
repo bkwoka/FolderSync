@@ -19,6 +19,7 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
     /// <inheritdoc />
     public async Task GrantMeshPermissionsAsync(RemoteInfo newRemote, List<RemoteInfo> existingRemotes, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Logger.Info("Initiating MESH permission distribution for account: {0}", newRemote.FriendlyName);
         
         // Compensation registry for the Saga pattern mechanism
@@ -42,7 +43,7 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
                 await googleApi.ShareFolderAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, cancellationToken);
                 
                 // Register compensation action
-                rollbackActions.Add(() => googleApi.RevokePermissionAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, CancellationToken.None));
+                rollbackActions.Add(() => googleApi.RevokePermissionAsync(existing.RcloneRemote, existing.FolderId, newTargetEmail, cancellationToken));
             }
             
             Logger.Info("Successfully distributed all MESH permissions for: {0}", newRemote.FriendlyName);
@@ -76,10 +77,13 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
     public async Task RevokeMeshPermissionsAsync(RemoteInfo targetToRemove, List<RemoteInfo> existingRemotes,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Logger.Info("Starting Mesh Revocation for: {TargetName}", targetToRemove.FriendlyName);
 
         foreach (var other in existingRemotes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Individual try-catch blocks ensure that failures on one drive (e.g., 404 Not Found) don't stop the overall revocation process
 
             try
@@ -87,6 +91,10 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
                 // Revoke target account's access to the other remote's folder
                 await googleApi.RevokePermissionAsync(other.RcloneRemote, other.FolderId,
                     targetToRemove.Email ?? targetToRemove.RcloneRemote, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -99,6 +107,10 @@ public class MeshPermissionService(IGoogleDriveApiService googleApi) : IMeshPerm
                 // Revoke the other account's access to the target remote's folder
                 await googleApi.RevokePermissionAsync(targetToRemove.RcloneRemote, targetToRemove.FolderId,
                     other.Email ?? other.RcloneRemote, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

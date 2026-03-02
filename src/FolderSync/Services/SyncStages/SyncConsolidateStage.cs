@@ -26,8 +26,10 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
     /// <inheritdoc />
     public async Task RunAsync(RemoteInfo remote, IProgress<SyncProgressEvent> uiLogger, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Logger.Info("Consolidating drive: {FriendlyName}", remote.FriendlyName);
-        var allDirs = await rclone.ListItemsAsync($"{remote.RcloneRemote}:", true, cancellationToken);
+
+        var allDirs = await rclone.ListItemsAsync($"{remote.RcloneRemote}:", true, cancellationToken) ?? new List<RcloneItem>();
         var targetId = remote.FolderId;
 
         // Find all directories named 'AIStudio_bak' that are NOT our main target folder
@@ -45,8 +47,8 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
             string sourcePath = $"{remote.RcloneRemote},root_folder_id={dir.Id}:";
             string destPath = $"{remote.RcloneRemote},root_folder_id={targetId}:";
 
-            var filesToMove = await rclone.ListItemsAsync(sourcePath, false, cancellationToken);
-            var existingFiles = await rclone.ListItemsAsync(destPath, false, cancellationToken);
+            var filesToMove = await rclone.ListItemsAsync(sourcePath, false, cancellationToken) ?? new List<RcloneItem>();
+            var existingFiles = await rclone.ListItemsAsync(destPath, false, cancellationToken) ?? new List<RcloneItem>();
             
             var filesToActuallyMove = filesToMove
                 .Where(f => !f.Name.Equals(AppConstants.HistoryFileName, StringComparison.OrdinalIgnoreCase))

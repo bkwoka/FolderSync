@@ -47,10 +47,12 @@ public class UpdateServiceTests
         }
     }
 
+    // ─── Version Comparison & Logic ───────────────────────────────────────────
+
     [Fact]
     public async Task CheckForUpdates_WhenRemoteIsNewer_ReturnsUpdateAvailable()
     {
-        // Arrange: Simulate a newer remote version from the GitHub repository.
+        // Arrange
         string json = @"{ ""tag_name"": ""v99.99.99"", ""html_url"": ""https://github.com"" }";
         SetupHttpResponse(HttpStatusCode.OK, json);
 
@@ -66,7 +68,7 @@ public class UpdateServiceTests
     [Fact]
     public async Task CheckForUpdates_WhenRemoteVersionEqualsLocal_ReturnsNoUpdate()
     {
-        // Arrange: Simulate a remote version exactly matching the executing assembly version.
+        // Arrange
         string currentVer = typeof(UpdateService).Assembly.GetName().Version?.ToString(3) ?? "0.1.4";
         string json = $@"{{ ""tag_name"": ""v{currentVer}"", ""html_url"": ""https://github.com"" }}";
         SetupHttpResponse(HttpStatusCode.OK, json);
@@ -75,15 +77,68 @@ public class UpdateServiceTests
         var result = await _sut.CheckForUpdatesAsync();
 
         // Assert
-        // Identical versions should result in no update being identified (IsUpdateAvailable: false).
         result.Should().NotBeNull();
         result!.IsUpdateAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_WhenRemoteVersionIsOlder_ShouldReturnNoUpdate()
+    {
+        // Arrange – simulate a local version that is ahead of the latest remote tag (e.g., development builds)
+        string json = @"{ ""tag_name"": ""v0.0.1"", ""html_url"": ""https://github.com"" }";
+        SetupHttpResponse(HttpStatusCode.OK, json);
+
+        // Act
+        var result = await _sut.CheckForUpdatesAsync();
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsUpdateAvailable.Should().BeFalse("a downgrade/rollback version must not be considered an update");
+    }
+
+    [Theory]
+    [InlineData(@"{ ""tag_name"": ""v1.0.0-beta"", ""html_url"": ""https://github.com"" }")]
+    [InlineData(@"{ ""tag_name"": ""1.2.3"", ""html_url"": ""https://github.com"" }")]
+    public async Task CheckForUpdates_WithNonStandardTagFormats_ShouldHandleGracefully(string json)
+    {
+        // Arrange
+        SetupHttpResponse(HttpStatusCode.OK, json);
+
+        // Act
+        var result = await _sut.CheckForUpdatesAsync();
+
+        // Assert – pre-release and non-prefixed tags must be handled without throwing exceptions.
+        if (result != null)
+        {
+            result.IsUpdateAvailable.Should().BeFalse("pre-release or non-standard tags should not trigger update notifications");
+        }
+    }
+
+    // ─── HTTP Resilience & Error Handling ──────────────────────────────────────
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task CheckForUpdates_WhenHttpError_ShouldReturnNull(HttpStatusCode errorCode)
+    {
+        // Arrange
+        SetupHttpResponse(errorCode, "");
+
+        // Act
+        var result = await _sut.CheckForUpdatesAsync();
+
+        // Assert – non-success HTTP codes must be handled gracefully.
+        result.Should().BeNull();
     }
 
     [Theory]
     [InlineData("{}")]
     [InlineData(@"{ ""tag_name"": ""not_a_version"" }")]
-    public async Task CheckForUpdates_WhenMalformedJson_ReturnsNull(string invalidJson)
+    [InlineData(@"{ ""tag_name"": ""v1.0.0"" }")] // Missing html_url
+    [InlineData("")] // Empty body
+    public async Task CheckForUpdates_WithIncompleteOrMalformedData_ReturnsNull(string invalidJson)
     {
         // Arrange
         SetupHttpResponse(HttpStatusCode.OK, invalidJson);
@@ -92,25 +147,37 @@ public class UpdateServiceTests
         var result = await _sut.CheckForUpdatesAsync();
 
         // Assert
-        // Malformed JSON structures should be handled gracefully by returning null.
+        result.Should().BeNull("incomplete JSON payloads cannot be processed");
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_WhenNetworkException_ReturnsNullWithoutCrashing()
+    {
+        // Arrange
+        SetupHttpResponse(HttpStatusCode.OK, "", new HttpRequestException("No connection"));
+
+        // Act & Assert
+        Func<Task> act = () => _sut.CheckForUpdatesAsync();
+        await act.Should().NotThrowAsync();
+        
+        var result = await _sut.CheckForUpdatesAsync();
         result.Should().BeNull();
     }
 
     [Fact]
-    public async Task CheckForUpdates_WhenNetworkThrows_ReturnsNullWithoutCrashing()
+    public async Task CheckForUpdates_WhenRequestTimesOut_ShouldReturnNull()
     {
-        // Arrange: Simulate a total network failure/timeout.
-        SetupHttpResponse(HttpStatusCode.OK, "", new HttpRequestException("No connection"));
+        // Arrange
+        SetupHttpResponse(HttpStatusCode.OK, "", new TaskCanceledException("Request timed out"));
 
         // Act
-        Func<Task> act = async () => await _sut.CheckForUpdatesAsync();
+        var result = await _sut.CheckForUpdatesAsync();
 
         // Assert
-        // The updater should not crash the main thread on network exceptions.
-        await act.Should().NotThrowAsync();
-        var result = await _sut.CheckForUpdatesAsync();
-        result.Should().BeNull();
+        result.Should().BeNull("network timeouts must result in null, preventing UI freezes");
     }
+
+    // ─── Header Verification ───────────────────────────────────────────────────
 
     [Fact]
     public async Task CheckForUpdates_ShouldSendCorrectUserAgentHeader()
@@ -121,7 +188,7 @@ public class UpdateServiceTests
         // Act
         await _sut.CheckForUpdatesAsync();
 
-        // Assert: Verify that the required User-Agent header is included in the GitHub API request.
+        // Assert
         _mockHttpMessageHandler.Protected().Verify(
             "SendAsync",
             Times.Once(),

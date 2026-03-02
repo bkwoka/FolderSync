@@ -24,6 +24,8 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
     public async Task DeleteConversationAsync(string fileName, bool deleteAttachments, RemoteInfo masterRemote,
         List<RemoteInfo> allRemotes, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         Logger.Info("Global Delete Initiated for file: '{FileName}'. DeleteAttachments: {DeleteAttachments}", fileName,
             deleteAttachments);
 
@@ -51,7 +53,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             }
         }
 
-        var allMasterDirs = await rclone.ListItemsAsync($"{masterRemote.RcloneRemote}:", true, cancellationToken);
+        var allMasterDirs = await rclone.ListItemsAsync($"{masterRemote.RcloneRemote}:", true, cancellationToken) ?? new List<RcloneItem>();
         var targetDirs = allMasterDirs.Where(d => d.Name == AppConstants.TargetFolderName).ToList();
         if (targetDirs.All(d => d.Id != masterRemote.FolderId))
         {
@@ -170,7 +172,11 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                             prop.Value.TryGetProperty("id", out var idElement) &&
                             idElement.ValueKind == JsonValueKind.String)
                         {
-                            ids.Add(idElement.GetString()!);
+                            string id = idElement.GetString()!;
+                            if (!string.IsNullOrWhiteSpace(id))
+                            {
+                                ids.Add(id);
+                            }
                         }
                     }
                 }

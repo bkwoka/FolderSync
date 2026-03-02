@@ -48,15 +48,27 @@ public class UpdateService(IHttpClientFactory httpClientFactory) : IUpdateServic
                 string tagName = tagElement.GetString() ?? "";
                 string htmlUrl = urlElement.GetString() ?? "";
 
-                string cleanRemoteVersion =
-                    tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tagName[1..] : tagName;
+                // Ignore pre-release versions (e.g., "v1.2.3-beta", "1.2.3-rc1")
+                if (tagName.Contains('-'))
+                {
+                    Logger.Trace("Ignoring pre-release version: {TagName}", tagName);
+                    return null;
+                }
+
+                // Enforce 'v' prefix requirement for standard version tags (e.g., skips "1.2.3")
+                if (!tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+                {
+                    Logger.Trace("Skipping non-standard update tag: {TagName}", tagName);
+                    return null;
+                }
+
+                string cleanRemoteVersion = tagName[1..];
 
                 // Retrieve current version from assembly metadata for comparison
                 string currentVerStr = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-                string cleanLocalVersion = currentVerStr;
-
+                
                 if (Version.TryParse(cleanRemoteVersion, out Version? remoteVer) &&
-                    Version.TryParse(cleanLocalVersion, out Version? localVer))
+                    Version.TryParse(currentVerStr, out Version? localVer))
                 {
                     bool isNewer = remoteVer > localVer;
                     Logger.Info("Update check internal: Local {LocalVer}, Remote {RemoteVer}. IsNewer: {IsNewer}",

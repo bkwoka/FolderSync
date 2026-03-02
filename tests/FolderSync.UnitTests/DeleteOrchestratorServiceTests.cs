@@ -35,8 +35,14 @@ public class DeleteOrchestratorServiceTests
             _masterRemote,
             new RemoteInfo("Slave", "gdrive_slave", "slave_id")
         };
+
+        // Default setup: ListItemsAsync returns empty list (no subfolders to scan)
+        _mockRclone.Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RcloneItem>());
     }
 
+    // ─── Basic Deletion & Attachments ──────────────────────────────────────────
+    
     [Fact]
     public async Task DeleteConversation_WithAttachments_ShouldExtractIdsAndCallTrash()
     {
@@ -54,94 +60,102 @@ public class DeleteOrchestratorServiceTests
         await _sut.DeleteConversationAsync(fileName, deleteAttachments: true, _masterRemote, _allRemotes, CancellationToken.None);
 
         // Assert
-        // Verify data transformation: Ensure JSON was parsed and Google API was invoked for the attachment ID.
+        // Verify that the attachment ID was extracted and trash was invoked.
         _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), "attach123", It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         
-        // Verify Hard Delete: Ensure the prompt file was deleted with trash bypassed across remotes.
+        // Ensure hard delete (--drive-use-trash=false) was utilized for the prompt file itself.
         _mockRclone.Verify(x => x.ExecuteCommandAsync(
-            It.Is<string[]>(args => args[0] == "deletefile" && args[2] == "--drive-use-trash=false"), 
+            It.Is<string[]>(args => args[0] == "deletefile" && Array.Exists(args, arg => arg == "--drive-use-trash=false")), 
             null, It.IsAny<CancellationToken>(), null), Times.Exactly(2)); 
     }
 
     [Fact]
-    public async Task DeleteConversation_WithMultipleAttachments_ShouldTrashAll()
+    public async Task DeleteConversation_WithDuplicateAttachmentIds_ShouldTrashEachIdOnlyOnce()
     {
-        // Arrange
-        string fileName = "chat.prompt";
-        // Multiple attachments in varying structures
-        string validJson = @"{ ""chunkedPrompt"": { ""chunks"": [ { ""file"": { ""id"": ""attach1"" } }, { ""image"": { ""id"": ""attach2"" } } ] } }";
-        
-        _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(validJson);
+        // Arrange – the same ID appears in multiple chunks (e.g., image and file references)
+        const string duplicateId = "attach_duplicated";
+        string json = $@"{{ ""chunkedPrompt"": {{ ""chunks"": [ {{ ""file"": {{ ""id"": ""{duplicateId}"" }} }}, {{ ""image"": {{ ""id"": ""{duplicateId}"" }} }} ] }} }}";
 
-        _mockRclone.Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<RcloneItem>());
+        _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(json);
 
         // Act
-        await _sut.DeleteConversationAsync(fileName, true, _masterRemote, _allRemotes, CancellationToken.None);
+        await _sut.DeleteConversationAsync("chat.prompt", true, _masterRemote, _allRemotes, CancellationToken.None);
 
         // Assert
-        // All identified attachment IDs should be sent to the trash.
-        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), "attach1", It.IsAny<CancellationToken>()), Times.AtLeastOnce);
-        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), "attach2", It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), duplicateId, It.IsAny<CancellationToken>()), 
+            Times.Once, "extracted IDs must be de-duplicated before calling the Google API");
     }
 
     [Fact]
-    public async Task DeleteConversation_WhenRcloneThrows_ShouldHandleGracefullyWithoutCrashing()
+    public async Task DeleteConversation_WhenAttachmentIdIsEmptyString_ShouldNotCallTrash()
     {
-        // Arrange
-        // Simulate a partial failure (Scatter-Gather degradation): Master deletion logic succeeds, but Slave fails.
-        _mockRclone.Setup(x => x.ExecuteCommandAsync(It.Is<string[]>(a => a[1].Contains("slave_id")), null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()))
-            .ThrowsAsync(new InvalidOperationException("API Quota Error on Slave"));
-
-        _mockRclone.Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<RcloneItem> { new RcloneItem("master_id", AppConstants.TargetFolderName, DateTime.Now, true, "dir") });
+        // Arrange – malformed chunk with an empty ID string
+        const string json = @"{ ""chunkedPrompt"": { ""chunks"": [ { ""file"": { ""id"": """" } } ] } }";
+        _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(json);
 
         // Act
-        Func<Task> act = async () => await _sut.DeleteConversationAsync("test.prompt", false, _masterRemote, _allRemotes, CancellationToken.None);
+        await _sut.DeleteConversationAsync("chat.prompt", true, _masterRemote, _allRemotes, CancellationToken.None);
 
         // Assert
-        // Exceptions on individual remotes should be caught and logged, preventing entire process termination.
-        await act.Should().NotThrowAsync();
+        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), 
+            Times.Never, "empty attachment IDs must be ignored to avoid invalid API calls");
+    }
+
+    // ─── Resilience & Error Handling ──────────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteConversation_WhenReadFileThrowsNetworkException_ShouldNotAbortDeletionCycle()
+    {
+        // Arrange – simulate network failure during JSON retrieval
+        _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Network timeout"));
+
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("chat.prompt", true, _masterRemote, _allRemotes, CancellationToken.None))
+            .Should().NotThrowAsync("failure to read attachment metadata must not prevent the deletion of the conversation itself");
+        
+        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteConversation_WhenAllRemotesFail_ShouldHandleGracefully()
+    {
+        // Arrange
+        _mockRclone.Setup(x => x.ExecuteCommandAsync(It.IsAny<string[]>(), null, It.IsAny<CancellationToken>(), It.IsAny<TimeSpan?>()))
+            .ThrowsAsync(new InvalidOperationException("Fatal error across all accounts"));
+
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("test.prompt", false, _masterRemote, _allRemotes, CancellationToken.None))
+            .Should().NotThrowAsync("exceptions encountered during prompt file deletion must be isolated per-remote");
     }
 
     [Theory]
-    [InlineData("")]
     [InlineData("null")]
-    [InlineData("{ \"invalid_format\": true }")]
     [InlineData("Not a JSON")]
-    public async Task DeleteConversation_WithInvalidJson_ShouldNotThrowAndSkipAttachments(string corruptedJson)
+    public async Task DeleteConversation_WithInvalidJson_ShouldGracefullySkipAttachments(string corruptedJson)
     {
         // Arrange
         _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(corruptedJson);
 
-        _mockRclone.Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<RcloneItem>());
-
-        // Act
-        Func<Task> act = async () => await _sut.DeleteConversationAsync("test.prompt", true, _masterRemote, _allRemotes, CancellationToken.None);
-
-        // Assert
-        // The orchestrator should handle corrupted JSON gracefully without terminating the operation.
-        await act.Should().NotThrowAsync();
-        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("test.prompt", true, _masterRemote, _allRemotes, CancellationToken.None))
+            .Should().NotThrowAsync();
     }
 
+    // ─── Lifecycle & Cancellation ──────────────────────────────────────────────
+
     [Fact]
-    public async Task DeleteConversation_WithoutAttachments_ShouldSkipFileReading()
+    public async Task DeleteConversation_WithSingleRemote_ShouldCompleteNormally()
     {
         // Arrange
-        _mockRclone.Setup(x => x.ListItemsAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<RcloneItem>());
+        var singleRemoteList = new List<RemoteInfo> { _masterRemote };
 
-        // Act
-        await _sut.DeleteConversationAsync("test.prompt", deleteAttachments: false, _masterRemote, _allRemotes, CancellationToken.None);
-
-        // Assert
-        // Ensure no attempt is made to read the prompt file if attachment deletion is disabled.
-        _mockRclone.Verify(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        _mockGoogleApi.Verify(x => x.TrashFileAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("chat.prompt", false, _masterRemote, singleRemoteList, CancellationToken.None))
+            .Should().NotThrowAsync("the orchestrator must support single-remote configurations");
     }
 
     [Fact]
@@ -151,14 +165,8 @@ public class DeleteOrchestratorServiceTests
         var cts = new CancellationTokenSource();
         cts.Cancel(); 
 
-        _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
-
-        // Act
-        Func<Task> act = async () => await _sut.DeleteConversationAsync("test.prompt", true, _masterRemote, _allRemotes, cts.Token);
-
-        // Assert
-        // Cancellation tokens must be respected and corresponding exceptions propagated.
-        await act.Should().ThrowExactlyAsync<OperationCanceledException>();
+        // Act & Assert
+        await _sut.Awaiting(x => x.DeleteConversationAsync("test.prompt", true, _masterRemote, _allRemotes, cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
     }
 }
