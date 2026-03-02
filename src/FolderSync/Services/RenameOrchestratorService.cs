@@ -84,13 +84,14 @@ public class RenameOrchestratorService(IRcloneService rclone, ITranslationServic
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
             {
-                // IDEMPOTENCY: Expected behavior if the file is not present on the Slave drive yet.
+                // File not found on the Slave drive is treated as a success for idempotency
+                // (the file might not have been synchronized to this remote yet).
                 Logger.Debug("File {0} did not exist in root folder of {1}. Ignoring.", oldFullName,
                     slave.FriendlyName);
             }
             catch (Exception ex)
             {
-                // Real failure (Network, Timeout, 403 Forbidden). We must report this to avoid Split-Brain silently.
+                // Unrecoverable terminal failure: must track this to prevent silent mesh desynchronization.
                 Logger.Error(ex, "Failed to rename file on slave {0}.", slave.FriendlyName);
                 failedRemotes.Add(slave.FriendlyName);
             }

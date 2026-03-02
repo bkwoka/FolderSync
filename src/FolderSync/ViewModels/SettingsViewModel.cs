@@ -526,7 +526,9 @@ public partial class SettingsViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Logger.Error(ex, "Failed to set master.");
+            // Inform the user about the failure to ensure configuration state transparency.
+            StatusMessage = _localizer["Error_SetMasterFailed"];
+            Logger.Error(ex, "Failed to change the Master drive configuration.");
         }
         finally
         {

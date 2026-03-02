@@ -445,8 +445,8 @@ public partial class BrowserViewModel : ViewModelBase
         }
         catch (PartialRenameException partialEx)
         {
-            // ARCHITECTURE: The rename succeeded on Master, but failed on some Slaves.
-            // We MUST update the UI table anyway, because the file has physically changed on the Master drive.
+            // Update the UI state since the rename succeeded on the Master drive, 
+            // even if some slave remotes failed and might cause duplicates later.
             var updatedItem = _fileToProcess with { Name = newFullName, ModTime = DateTime.UtcNow };
             int allIdx = _allFetchedFiles.IndexOf(_fileToProcess);
             if (allIdx >= 0) _allFetchedFiles[allIdx] = updatedItem;
