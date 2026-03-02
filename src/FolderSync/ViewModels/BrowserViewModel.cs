@@ -443,6 +443,22 @@ public partial class BrowserViewModel : ViewModelBase
                 IsInputModalVisible = false;
             }
         }
+        catch (PartialRenameException partialEx)
+        {
+            // ARCHITECTURE: The rename succeeded on Master, but failed on some Slaves.
+            // We MUST update the UI table anyway, because the file has physically changed on the Master drive.
+            var updatedItem = _fileToProcess with { Name = newFullName, ModTime = DateTime.UtcNow };
+            int allIdx = _allFetchedFiles.IndexOf(_fileToProcess);
+            if (allIdx >= 0) _allFetchedFiles[allIdx] = updatedItem;
+
+            int filesIdx = Files.IndexOf(_fileToProcess);
+            if (filesIdx >= 0) Files[filesIdx] = updatedItem;
+
+            // Warn the user about the impending duplicate after next sync
+            StatusMessage = string.Format(_localizer["Error_PartialRename"], string.Join(", ", partialEx.FailedRemotes));
+            Logger.Warn("Partial rename occurred. Desynchronization on: {0}", string.Join(", ", partialEx.FailedRemotes));
+            IsInputModalVisible = false;
+        }
         catch (OperationCanceledException)
         {
             // Timeout response

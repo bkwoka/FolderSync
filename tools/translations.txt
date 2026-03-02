@@ -1,3 +1,0 @@
-Key | English | Polish
-Config_AutoDetecting | Scanning Google Drive for 'Google AI Studio' folder... | Trwa skanowanie Dysku Google w poszukiwaniu folderu 'Google AI Studio'...
-Error_PartialDelete | Partial success. Failed to delete from: {0}. Please sync and try again. | Częściowy sukces. Nie udało się usunąć z: {0}. Wykonaj synchronizację i spróbuj ponownie.

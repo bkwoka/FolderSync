@@ -52,4 +52,5 @@ rclone.conf
 *.tmp
 *.bak
 *.swp
-/tasks
+tasks/
+tools/translations.txt

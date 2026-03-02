@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using FolderSync.Exceptions;
 using FolderSync.Models;
 using FolderSync.Services.Interfaces;
 using NLog;
@@ -60,6 +62,7 @@ public class RenameOrchestratorService(IRcloneService rclone, ITranslationServic
 
         // 2. Parallel execution on Slave drives (Scatter-Gather pattern with Jitter).
         var slaves = allRemotes.Where(r => r.FolderId != masterRemote.FolderId).ToList();
+        var failedRemotes = new ConcurrentBag<string>();
 
         var renameTasks = slaves.Select(async (slave, index) =>
         {
@@ -79,16 +82,27 @@ public class RenameOrchestratorService(IRcloneService rclone, ITranslationServic
             {
                 throw;
             }
-            catch (Exception)
+            catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
             {
-                // Expected behavior if the file is not present on the Slave drive.
+                // IDEMPOTENCY: Expected behavior if the file is not present on the Slave drive yet.
                 Logger.Debug("File {0} did not exist in root folder of {1}. Ignoring.", oldFullName,
                     slave.FriendlyName);
+            }
+            catch (Exception ex)
+            {
+                // Real failure (Network, Timeout, 403 Forbidden). We must report this to avoid Split-Brain silently.
+                Logger.Error(ex, "Failed to rename file on slave {0}.", slave.FriendlyName);
+                failedRemotes.Add(slave.FriendlyName);
             }
         });
 
         // Wait for all Slave drives to complete their parallel execution.
         await Task.WhenAll(renameTasks);
+
+        if (!failedRemotes.IsEmpty)
+        {
+            throw new PartialRenameException(failedRemotes.Distinct().ToList());
+        }
 
         Logger.Info("Global Rename Completed Successfully.");
     }
