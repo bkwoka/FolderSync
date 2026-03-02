@@ -18,6 +18,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
+using System.Text.RegularExpressions;
 
 namespace FolderSync;
 
@@ -30,6 +31,9 @@ public partial class App : Application
     /// Global access to the service provider.
     /// </summary>
     public static IServiceProvider? Services { get; private set; }
+
+    [GeneratedRegex("rate_?limit_?exceeded", RegexOptions.IgnoreCase)]
+    private static partial Regex RateLimitRegex();
 
     /// <inheritdoc />
     public override void Initialize()
@@ -56,23 +60,55 @@ public partial class App : Application
                     Delay = TimeSpan.FromSeconds(2),
                     BackoffType = DelayBackoffType.Exponential,
                     UseJitter = true,
-                    ShouldHandle = args =>
+                    ShouldHandle = async args =>
                     {
                         // Retry on network errors (e.g., no internet, connection reset)
                         if (args.Outcome.Exception != null)
                         {
-                            return new ValueTask<bool>(true);
+                            return true;
                         }
 
-                        var statusCode = args.Outcome.Result?.StatusCode;
-                        
-                        // Key logic: catch internal Google error codes, including the problematic 403 Forbidden.
-                        bool shouldRetry = statusCode == System.Net.HttpStatusCode.Forbidden ||       // Google Rate Limit / Quota Exceeded
-                                           statusCode == System.Net.HttpStatusCode.TooManyRequests || // Standard Rate Limit
-                                           statusCode == System.Net.HttpStatusCode.RequestTimeout ||  // Timeout
-                                           (int?)statusCode >= 500;                                   // Google Server Errors
+                        var response = args.Outcome.Result;
+                        if (response == null) return false;
 
-                        return new ValueTask<bool>(shouldRetry);
+                        var statusCode = response.StatusCode;
+
+                        // Persistent Google Server Errors and standard Rate Limits
+                        if (statusCode == System.Net.HttpStatusCode.TooManyRequests || 
+                            statusCode == System.Net.HttpStatusCode.RequestTimeout || 
+                            (int)statusCode >= 500)
+                        {
+                            return true;
+                        }
+
+                        // Smart handling for 403 Forbidden errors.
+                        // We distinguish between a temporary Quota Exceeded error (which merits a retry)
+                        // and a permanent Access Denied error (which should fail-fast).
+                        if (statusCode == System.Net.HttpStatusCode.Forbidden)
+                        {
+                            try
+                            {
+                                // Inspect the response body to determine the exact cause of the 403 error.
+                                string content = await response.Content.ReadAsStringAsync();
+                                
+                                // Utilize the compiled Regex to identify Google's rate limit patterns.
+                                if (RateLimitRegex().IsMatch(content))
+                                {
+                                    return true; // Quota reset required - trigger retry.
+                                }
+                            }
+                            catch
+                            {
+                                // In case of I/O failure while reading the body, do not attempt a retry.
+                                return false;
+                            }
+
+                            // This is a standard permission denial (e.g., a specific account in our mesh 
+                            // does not have access to a shared resource). Fail-fast to skip to the next account.
+                            return false;
+                        }
+
+                        return false;
                     }
                 });
             });

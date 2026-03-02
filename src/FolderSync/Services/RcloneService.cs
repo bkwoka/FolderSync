@@ -22,6 +22,9 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
     [GeneratedRegex(@"\{.*?\}", RegexOptions.Singleline)]
     private static partial Regex JsonTokenRegex();
 
+    [GeneratedRegex(@"root_folder_id=([a-zA-Z0-9_-]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex FolderIdRegex();
+
     private string GetConfigPath()
     {
         string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -113,9 +116,10 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                     Logger.Warn("Rclone returned error code {0}: {1}", process.ExitCode, error);
                 }
 
-                // Refine the error message with contextual information before throwing.
-                string refinedError = TranslateRcloneError(error, arguments);
-                throw new InvalidOperationException(refinedError);
+                // Refine the error message with contextual information to provide meaningful feedback
+                // when critical Google Drive resources are missing.
+                string humanFriendlyError = TranslateRcloneError(error, arguments);
+                throw new InvalidOperationException(humanFriendlyError);
             }
 
             return output;
@@ -292,7 +296,7 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
 
     /// <summary>
     /// Translates raw Rclone error messages into user-friendly, context-aware technical descriptions.
-    /// Utilizes regular expressions to correlate error patterns with the original command arguments.
+    /// Scans command arguments for all folder IDs to identify which specific resource is missing.
     /// </summary>
     private string TranslateRcloneError(string rawError, string[] arguments)
     {
@@ -301,18 +305,22 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
         {
             string commandLine = string.Join(" ", arguments);
 
-            // Extract the target folder ID from the Rclone connection string
-            var folderMatch = Regex.Match(commandLine, @"root_folder_id=([a-zA-Z0-9_-]+)");
+            // Scan for all folder IDs used in the operation
+            var matches = FolderIdRegex().Matches(commandLine);
 
-            if (folderMatch.Success)
+            foreach (Match match in matches)
             {
-                string folderIdFromArgs = folderMatch.Groups[1].Value;
-
-                // If the missing resource ID matches the root folder ID provided in the arguments
-                if (rawError.Contains(folderIdFromArgs))
+                if (match.Groups.Count > 1)
                 {
-                    return $"CRITICAL FOLDER MISSING: The configured Google AI Studio base directory (ID: {folderIdFromArgs}) " +
-                           "could not be found. The folder may have been deleted or the access permission has been revoked.";
+                    string folderId = match.Groups[1].Value;
+
+                    // If a resource ID from the command matches the ID reported in the error message
+                    if (rawError.Contains(folderId))
+                    {
+                        return $"CRITICAL ERROR: One of the configured Google Drive folders is missing (ID: {folderId}). " +
+                               "The folder might have been deleted, moved to trash, or access permissions have expired. " +
+                               "Please verify your Drive Management settings.";
+                    }
                 }
             }
         }

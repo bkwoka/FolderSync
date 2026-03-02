@@ -19,7 +19,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     /// <summary>
-    /// Deletes a conversation file and optionally its attachments from all configured remotes.
+    /// Permanently deletes a conversation file and optionally moves its attachments to the trash across all configured remotes.
     /// </summary>
     public async Task DeleteConversationAsync(string fileName, bool deleteAttachments, RemoteInfo masterRemote,
         List<RemoteInfo> allRemotes, CancellationToken cancellationToken = default)
@@ -28,6 +28,10 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             deleteAttachments);
 
         var attachmentIds = new List<string>();
+        
+        // PHASE 1: Data Extraction
+        // We MUST extract attachment IDs before destroying the conversation file, 
+        // because the .prompt file acts as the only map to those attachments.
         if (deleteAttachments)
         {
             try
@@ -35,6 +39,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                 string jsonContent = await rclone.ReadFileContentAsync(masterRemote.RcloneRemote, masterRemote.FolderId,
                     fileName, cancellationToken);
                 attachmentIds = ExtractAttachmentIds(jsonContent);
+                Logger.Info("Extracted {0} attachment IDs for soft deletion.", attachmentIds.Count);
             }
             catch (OperationCanceledException)
             {
@@ -42,7 +47,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             }
             catch (Exception ex)
             {
-                Logger.Warn(ex, "Could not analyze file {FileName} for attachments.", fileName);
+                Logger.Warn(ex, "Could not analyze file {FileName} for attachments. Proceeding with prompt deletion only.", fileName);
             }
         }
 
@@ -54,13 +59,15 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                 null));
         }
 
+        // PHASE 2: Permanent Annihilation of the .prompt file (Hard Delete)
         // Scatter-Gather parallel deletion from Master folders
         var masterDeleteTasks = targetDirs.Select(async dir =>
         {
             try
             {
                 string targetPath = $"{masterRemote.RcloneRemote},root_folder_id={dir.Id}:{fileName}";
-                await rclone.ExecuteCommandAsync(["deletefile", targetPath, "--drive-use-trash=true"], null,
+                // Permanently destroy the file by bypassing the trash bin
+                await rclone.ExecuteCommandAsync(["deletefile", targetPath, "--drive-use-trash=false"], null,
                     cancellationToken);
             }
             catch (OperationCanceledException)
@@ -69,18 +76,19 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             }
             catch (Exception ex)
             {
-                Logger.Trace(ex, "Failed to delete file from master directory {DirId}.", dir.Id);
+                Logger.Trace(ex, "Failed to permanently delete file from master directory {DirId}.", dir.Id);
             }
         });
         await Task.WhenAll(masterDeleteTasks);
 
-        // Scatter-Gather parallel propagation to Slaves
+        // Scatter-Gather parallel propagation of Hard Delete to Slaves
         var slaveDeleteTasks = allRemotes.Where(r => r.FolderId != masterRemote.FolderId).Select(async slave =>
         {
             try
             {
                 string targetPath = $"{slave.RcloneRemote},root_folder_id={slave.FolderId}:{fileName}";
-                await rclone.ExecuteCommandAsync(["deletefile", targetPath, "--drive-use-trash=true"], null,
+                // Permanently destroy the file by bypassing the trash bin
+                await rclone.ExecuteCommandAsync(["deletefile", targetPath, "--drive-use-trash=false"], null,
                     cancellationToken);
             }
             catch (OperationCanceledException)
@@ -89,11 +97,14 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
             }
             catch (Exception ex)
             {
-                Logger.Trace(ex, "Failed to delete file from slave drive {RemoteName}.", slave.FriendlyName);
+                Logger.Trace(ex, "Failed to permanently delete file from slave drive {RemoteName}.", slave.FriendlyName);
             }
         });
         await Task.WhenAll(slaveDeleteTasks);
 
+        Logger.Info("Permanent deletion of .prompt file '{FileName}' completed across MESH.", fileName);
+
+        // PHASE 3: Quarantine / Soft Delete of Attachments
         // Token-Roulette for attachments: We attempt deletion using each available account until one succeeds.
         // This is necessary because attachments may be owned by different accounts in the mesh.
         if (attachmentIds.Any())
@@ -106,6 +117,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                     cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
+                        // TrashFileAsync performs a SOFT DELETE (moves to Google Drive Trash)
                         await googleApi.TrashFileAsync(remote.RcloneRemote, id, cancellationToken);
                         trashed = true;
                         Logger.Info("Successfully moved attachment {0} to trash using account {1}", id,
@@ -114,6 +126,7 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                     }
                     catch (UnauthorizedAccessException)
                     {
+                        // Expected if this specific remote account doesn't own or have rights to the attachment
                     }
                     catch (System.Net.Http.HttpRequestException ex)
                     {
@@ -129,11 +142,11 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                     }
                 }
 
-                if (!trashed) Logger.Warn("Could not move attachment {0} to trash.", id);
+                if (!trashed) Logger.Warn("Could not move attachment {0} to trash. It might already be deleted or inaccessible.", id);
             }
         }
 
-        Logger.Info("Global Delete procedure completed for '{FileName}'.", fileName);
+        Logger.Info("Global Delete procedure completed successfully for '{FileName}'.", fileName);
     }
 
     /// <summary>
