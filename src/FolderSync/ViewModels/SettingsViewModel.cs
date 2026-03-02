@@ -209,7 +209,10 @@ public partial class SettingsViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Logger.Error(ex, "LoadDataAndCheckIntegrityAsync failed");
+            // Fail-Visible: Inform the user if the drive state cannot be retrieved
+            // due to hardware or I/O issues (e.g., blocked rclone process).
+            Logger.Error(ex, "LoadDataAndCheckIntegrityAsync failed to retrieve drive state.");
+            StatusMessage = _localizer["Error_CheckLogs"];
         }
     }
 

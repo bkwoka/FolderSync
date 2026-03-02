@@ -281,17 +281,12 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
 
     public async Task<List<string>> GetConfiguredRemotesAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            string output = await ExecuteCommandAsync(["listremotes"], null, cancellationToken);
-            return output.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(r => r.TrimEnd(':')).ToList();
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn(ex, "Failed to retrieve the list of configured Rclone remotes.");
-            return [];
-        }
+        // Removed error masking (silent catching). If Rclone fails (e.g., Timeout, I/O access denied), 
+        // the exception will propagate. Returning an empty list was causing false integrity alerts.
+        string output = await ExecuteCommandAsync(["listremotes"], null, cancellationToken);
+        
+        return output.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(r => r.TrimEnd(':')).ToList();
     }
 
     /// <summary>

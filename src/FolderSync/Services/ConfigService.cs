@@ -44,20 +44,43 @@ public class ConfigService : IConfigService
         await _fileLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            string json = await File.ReadAllTextAsync(_configPath).ConfigureAwait(false);
-            return JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig) ?? CreateEmptyConfig();
+            // Implement a retry strategy for transient I/O faults (e.g., file locked by antivirus).
+            // We attempt to read the configuration 3 times with a 500ms delay before escalating.
+            int retries = 3;
+            while (true)
+            {
+                try
+                {
+                    string json = await File.ReadAllTextAsync(_configPath).ConfigureAwait(false);
+                    return JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig) ?? CreateEmptyConfig();
+                }
+                catch (IOException ioEx)
+                {
+                    if (retries <= 0)
+                    {
+                        Logger.Error(ioEx, "Configuration file is permanently locked or inaccessible. Aborting to prevent profile loss.");
+                        throw; 
+                    }
+                    
+                    Logger.Warn(ioEx, "Configuration file is currently locked. Retrying in 500ms... ({0} retries left)", retries);
+                    await Task.Delay(500).ConfigureAwait(false);
+                    retries--;
+                }
+            }
         }
         catch (FileNotFoundException)
         {
+            // Expected for new installations; return a default empty configuration.
             return CreateEmptyConfig();
         }
         catch (DirectoryNotFoundException)
         {
+            // Expected for new installations; return a default empty configuration.
             return CreateEmptyConfig();
         }
         catch (JsonException jex)
         {
-            Logger.Error(jex, "Config file is corrupted. Backing up and starting fresh.");
+            Logger.Error(jex, "Configuration file is corrupted. Creating a backup and reinitializing with default settings.");
             try
             {
                 string corruptedBackup = $"{_configPath}.corrupted_{DateTime.Now:yyyyMMddHHmmss}";
@@ -65,14 +88,9 @@ public class ConfigService : IConfigService
             }
             catch (Exception copyEx)
             {
-                Logger.Error(copyEx, "Failed to backup corrupted config.");
+                Logger.Error(copyEx, "Secondary failure while attempting to backup the corrupted configuration.");
             }
 
-            return CreateEmptyConfig();
-        }
-        catch (Exception ex)
-        {
-            Logger.Error(ex, "An unexpected error occurred while loading configuration.");
             return CreateEmptyConfig();
         }
         finally

@@ -46,7 +46,7 @@ public class SyncEngineEdgeCaseTests
         var master       = new RemoteInfo("Master", "r", "f");
         var emptyList    = new List<RemoteInfo>();
         var progressValues = new List<double>();
-        var progressUpdater = new Progress<double>(v => progressValues.Add(v));
+        var progressUpdater = new SyncProgressReport(v => progressValues.Add(v));
 
         // Act
         await _sut.RunFullSync(emptyList, master, new Progress<SyncProgressEvent>(), progressUpdater);

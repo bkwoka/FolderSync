@@ -124,39 +124,50 @@ public partial class BrowserViewModel : ViewModelBase
     public async Task AutoRefreshAsync()
     {
         if (IsLoading) return;
-        var config = await _configService.LoadConfigAsync();
 
-        var toRemove = AvailableRemotes.Where(ar => !config.Remotes.Any(cr => cr.FolderId == ar.FolderId)).ToList();
-        foreach (var r in toRemove) AvailableRemotes.Remove(r);
-
-        foreach (var cr in config.Remotes)
+        try
         {
-            if (AvailableRemotes.All(ar => ar.FolderId != cr.FolderId))
+            var config = await _configService.LoadConfigAsync();
+
+            // Synchronize the local AvailableRemotes collection with the current configuration state.
+            var toRemove = AvailableRemotes.Where(ar => config.Remotes.All(cr => cr.FolderId != ar.FolderId)).ToList();
+            foreach (var r in toRemove) AvailableRemotes.Remove(r);
+
+            foreach (var cr in config.Remotes)
             {
-                AvailableRemotes.Add(cr);
+                if (AvailableRemotes.All(ar => ar.FolderId != cr.FolderId))
+                {
+                    AvailableRemotes.Add(cr);
+                }
+            }
+
+            var master = AvailableRemotes.FirstOrDefault(r => r.FolderId == config.MasterRemoteId);
+
+            if (SelectedRemote == null && master != null)
+            {
+                SelectedRemote = master;
+            }
+            else if (SelectedRemote != null)
+            {
+                // To maintain mesh consistency, structural modifications are restricted to the Master drive.
+                CanModify = (config.MasterRemoteId == SelectedRemote.FolderId);
+
+                if (Files.Count == 0 || _lastViewedFolderId != SelectedRemote.FolderId)
+                {
+                    await RefreshAsync();
+                }
+                else
+                {
+                    CurrentDriveInfo =
+                        $"{SelectedRemote.FriendlyName} ({SelectedRemote.Email ?? SelectedRemote.RcloneRemote})";
+                }
             }
         }
-
-        var master = AvailableRemotes.FirstOrDefault(r => r.FolderId == config.MasterRemoteId);
-
-        if (SelectedRemote == null && master != null)
+        catch (Exception ex)
         {
-            SelectedRemote = master;
-        }
-        else if (SelectedRemote != null)
-        {
-            // Modification allowed only on the Master drive to ensure sync consistency
-            CanModify = (config.MasterRemoteId == SelectedRemote.FolderId);
-
-            if (Files.Count == 0 || _lastViewedFolderId != SelectedRemote.FolderId)
-            {
-                await RefreshAsync();
-            }
-            else
-            {
-                CurrentDriveInfo =
-                    $"{SelectedRemote.FriendlyName} ({SelectedRemote.Email ?? SelectedRemote.RcloneRemote})";
-            }
+            // Gracefully handle configuration load failures to prevent crashing the main UI flow.
+            Logger.Error(ex, "Failed to initialize or refresh the remote drive list from configuration.");
+            StatusMessage = _localizer["Error_CheckLogs"];
         }
     }
 
