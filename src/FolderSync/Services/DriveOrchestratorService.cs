@@ -90,13 +90,18 @@ public class DriveOrchestratorService(
         }
         catch (Exception ex)
         {
-            Logger.Error(ex, "Failed to finalize adding drive. Rolling back Rclone config for {AccountEmail}", email);
+            Logger.Error(ex, "Failed to finalize adding drive. Rolling back Rclone configuration for {AccountEmail}", email);
             try
             {
+                // Attempt to remove the partially configured remote to maintain Rclone INI integrity.
                 await rcloneService.DeleteRemoteAsync(email);
             }
-            catch
+            catch (Exception rollbackEx)
             {
+                // Compensating transaction failure: Log the error to ensure orphaned remotes 
+                // in rclone.conf are traceable during debugging. We do not rethrow to avoid masking 
+                // the primary exception 'ex'.
+                Logger.Error(rollbackEx, "CRITICAL: Rollback failed! The remote '{0}' remains orphaned in rclone.conf.", email);
             }
 
             throw;

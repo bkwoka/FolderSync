@@ -143,17 +143,21 @@ public partial class SettingsViewModel : ViewModelBase
         });
     }
 
-    private async Task SavePreferenceAsync(Action<AppConfig> updateAction)
+    private async Task<bool> SavePreferenceAsync(Action<AppConfig> updateAction)
     {
         try
         {
             var config = await _configService.LoadConfigAsync();
             updateAction(config);
             await _configService.SaveConfigAsync(config);
+            return true;
         }
         catch (Exception ex)
         {
-            Logger.Error(ex, "Failed to save UI preferences.");
+            // Preventing silent UI state desynchronization by reporting save failures.
+            Logger.Error(ex, "Failed to persist application configuration preferences.");
+            StatusMessage = _localizer["Error_CheckLogs"];
+            return false;
         }
     }
 
@@ -712,19 +716,62 @@ public partial class SettingsViewModel : ViewModelBase
     {
         if (!_isInitializing && value != null)
         {
-            _localizer.Culture = new System.Globalization.CultureInfo(value.CultureCode);
-            _ = SavePreferenceAsync(c => c.Language = value.CultureCode);
-            WeakReferenceMessenger.Default.Send(new LanguageChangedMessage(value.CultureCode));
+            // Although ComboBox state rollback is complex without triggering additional event loops,
+            // we must ensure the application reacts to configuration save failures.
+            Task.Run(async () =>
+            {
+                bool success = await SavePreferenceAsync(c => c.Language = value.CultureCode);
+                if (success)
+                {
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        _localizer.Culture = new System.Globalization.CultureInfo(value.CultureCode);
+                        WeakReferenceMessenger.Default.Send(new LanguageChangedMessage(value.CultureCode));
+                    });
+                }
+            });
         }
     }
 
     partial void OnSkipRenameWarningPreferenceChanged(bool value)
     {
-        if (!_isInitializing) _ = SavePreferenceAsync(c => c.SkipRenameSyncWarning = value);
+        if (!_isInitializing)
+        {
+            Task.Run(async () =>
+            {
+                bool success = await SavePreferenceAsync(c => c.SkipRenameSyncWarning = value);
+                if (!success)
+                {
+                    // Rollback UI state if the disk persistence operation failed, suppressing further event triggers.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        _isInitializing = true;
+                        SkipRenameWarningPreference = !value;
+                        _isInitializing = false;
+                    });
+                }
+            });
+        }
     }
 
     partial void OnSkipDeleteWarningPreferenceChanged(bool value)
     {
-        if (!_isInitializing) _ = SavePreferenceAsync(c => c.SkipDeleteSyncWarning = value);
+        if (!_isInitializing)
+        {
+            Task.Run(async () =>
+            {
+                bool success = await SavePreferenceAsync(c => c.SkipDeleteSyncWarning = value);
+                if (!success)
+                {
+                    // Revert UI toggle state because the configuration update could not be finalized on disk.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        _isInitializing = true;
+                        SkipDeleteWarningPreference = !value;
+                        _isInitializing = false;
+                    });
+                }
+            });
+        }
     }
 }
