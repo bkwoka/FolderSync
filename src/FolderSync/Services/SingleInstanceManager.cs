@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using FolderSync.Helpers;
 using NLog;
 
 namespace FolderSync.Services;
@@ -25,7 +26,7 @@ public static class SingleInstanceManager
 
     /// <summary>
     /// Attempts to connect to an existing pipe and send a wake-up signal.
-    /// Returns true if another instance is already running and the signal was delivered.
+    /// Returns true if another instance is already running (or assumed to be running) to halt this process.
     /// </summary>
     public static bool TrySendWakeUp()
     {
@@ -41,11 +42,23 @@ public static class SingleInstanceManager
         }
         catch (TimeoutException)
         {
+            // Standard behavior: No other instance is listening, confirming we are the primary process.
             return false;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return false;
+            // Fail-Safe for IPC: If we receive an error other than Timeout (e.g., UnauthorizedAccessException or IOException),
+            // it indicates the pipe exists but access is restricted (e.g., permission mismatch).
+            // We assume another instance is running and abort to prevent concurrent data corruption or "Split-Brain" states.
+            Logger.Fatal(ex, "Critical IPC communication failure during Single-Instance check. Aborting startup to prevent concurrent data corruption.");
+
+            string title = "Google AI Studio Sync - Startup Error";
+            string msg = "Application is already running under a different user account or with different privileges (e.g., Run as Administrator).\n\n" +
+                         "Please close the other instance or launch this program with matching privileges.";
+
+            NativeDialogHelper.ShowError(title, msg);
+
+            return true;
         }
     }
 
