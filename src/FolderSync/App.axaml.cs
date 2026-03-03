@@ -121,6 +121,8 @@ public partial class App : Application
 
         // Infrastructure Services
         services.AddSingleton<IRcloneBootstrapper, RcloneBootstrapper>();
+        services.AddSingleton<IRcloneConfigManager, RcloneConfigManager>();
+        services.AddSingleton<IRcloneProcessRunner, RcloneProcessRunner>();
         services.AddSingleton<IRcloneService, RcloneService>();
         services.AddSingleton<IGoogleDriveApiService, GoogleDriveApiService>();
         services.AddSingleton<IMeshPermissionService, MeshPermissionService>();
