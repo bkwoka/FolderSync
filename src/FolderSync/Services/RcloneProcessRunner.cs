@@ -14,10 +14,6 @@ using NLog;
 
 namespace FolderSync.Services;
 
-/// <summary>
-/// Responsible exclusively for OS-level process execution, I/O stream management,
-/// and timeout handling for the Rclone binary. Implements the Temp Config Pattern.
-/// </summary>
 public partial class RcloneProcessRunner : IRcloneProcessRunner
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -33,33 +29,82 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
         _configManager = configManager;
     }
 
-    /// <summary>
-    /// Applies strict OS-level permissions to the temporary configuration file 
-    /// to prevent unauthorized access by other users or processes.
-    /// </summary>
     private static void SecureTempFile(string path)
     {
         if (OperatingSystem.IsWindows())
         {
             var fileInfo = new FileInfo(path);
             var security = fileInfo.GetAccessControl();
-            
-            // Disable inheritance and remove existing rules
             security.SetAccessRuleProtection(true, false); 
-            
-            // Grant FullControl ONLY to the current user
             security.AddAccessRule(new FileSystemAccessRule(
                 WindowsIdentity.GetCurrent().Name,
                 FileSystemRights.FullControl,
                 AccessControlType.Allow));
-                
             fileInfo.SetAccessControl(security);
         }
         else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
             var fileInfo = new FileInfo(path);
-            // chmod 600: Read/Write for owner only
             fileInfo.UnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+    }
+
+    /// <summary>
+    /// Extracts a map of RemoteName -> Token from a plaintext INI string.
+    /// Used to detect if Rclone auto-refreshed any OAuth tokens during execution.
+    /// </summary>
+    private Dictionary<string, string> ExtractTokensFromIni(string iniContent)
+    {
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lines = iniContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        string currentRemote = string.Empty;
+
+        foreach (var line in lines)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+            {
+                currentRemote = trimmed.Substring(1, trimmed.Length - 2);
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(currentRemote) && trimmed.StartsWith("token", StringComparison.OrdinalIgnoreCase))
+            {
+                int eqIndex = trimmed.IndexOf('=');
+                if (eqIndex > 0)
+                {
+                    string keyPart = trimmed.Substring(0, eqIndex).TrimEnd();
+                    if (keyPart.Equals("token", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tokens[currentRemote] = trimmed.Substring(eqIndex + 1).Trim();
+                    }
+                }
+            }
+        }
+        return tokens;
+    }
+
+    /// <summary>
+    /// Compares the post-execution temp config with the pre-execution state.
+    /// If Rclone refreshed any tokens, they are securely pushed back to the main vault.
+    /// </summary>
+    private async Task SyncRefreshedTokensAsync(string tempConfigPath, Dictionary<string, string> originalTokens)
+    {
+        if (!File.Exists(tempConfigPath)) return;
+        
+        string updatedIni = await File.ReadAllTextAsync(tempConfigPath);
+        var updatedTokens = ExtractTokensFromIni(updatedIni);
+
+        foreach (var kvp in updatedTokens)
+        {
+            string remoteName = kvp.Key;
+            string newToken = kvp.Value;
+
+            if (originalTokens.TryGetValue(remoteName, out string? oldToken) && newToken != oldToken)
+            {
+                Logger.Info("Detected OAuth token auto-refresh for remote '{0}'. Saving back to secure vault.", remoteName);
+                await _configManager.UpdateTokenAsync(remoteName, newToken);
+            }
         }
     }
 
@@ -67,8 +112,9 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // 1. Generate Temporary Plaintext Config
         string plainIni = await _configManager.GetDecryptedConfigAsync(cancellationToken);
+        var originalTokens = ExtractTokensFromIni(plainIni);
+
         string configDir = Path.GetDirectoryName(_configManager.GetConfigPath())!;
         string tempConfigPath = Path.Combine(configDir, $"temp_{Guid.NewGuid():N}.conf");
 
@@ -77,10 +123,8 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
 
         try
         {
-            // 2. Prepare Arguments
             var finalArgs = new List<string>(arguments);
             
-            // Ensure the temporary config is used instead of the default one
             int configIdx = finalArgs.IndexOf("--config");
             if (configIdx >= 0 && configIdx < finalArgs.Count - 1)
             {
@@ -93,7 +137,7 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
             }
 
             var maskedArgs = finalArgs.Select(a => a.StartsWith("token=", StringComparison.OrdinalIgnoreCase) ? "token=[MASKED]" : $"\"{a}\"");
-            Logger.Info("EXEC: rclone {Command}", string.Join(" ", maskedArgs.Where(a => !a.Contains("temp_")))); // Don't log temp paths
+            Logger.Info("EXEC: rclone {Command}", string.Join(" ", maskedArgs.Where(a => !a.Contains("temp_")))); 
 
             var startInfo = new ProcessStartInfo
             {
@@ -109,7 +153,6 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
 
             foreach (var arg in finalArgs) startInfo.ArgumentList.Add(arg);
 
-            // 3. Execute Process
             using var process = Process.Start(startInfo);
             if (process == null) throw new InvalidOperationException("Failed to initialize Rclone process.");
 
@@ -145,6 +188,9 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
 
             await process.WaitForExitAsync(timeoutCts.Token);
 
+            // CRITICAL: Capture any tokens refreshed by Rclone before we delete the temp file
+            await SyncRefreshedTokensAsync(tempConfigPath, originalTokens);
+
             if (process.ExitCode != 0)
             {
                 if (process.ExitCode == 3 || process.ExitCode == 4)
@@ -171,7 +217,6 @@ public partial class RcloneProcessRunner : IRcloneProcessRunner
         }
         finally
         {
-            // 4. Guaranteed Cleanup (Zero-Trust)
             if (File.Exists(tempConfigPath))
             {
                 try

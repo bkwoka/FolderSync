@@ -1,18 +1,13 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FolderSync.Services.Interfaces;
-using NLog;
 using FolderSync.Models;
+using NLog;
 
 namespace FolderSync.Services;
 
-/// <summary>
-/// Manages the physical rclone.conf file. Ensures tokens are encrypted at-rest 
-/// and provides in-memory decryption for runtime execution.
-/// </summary>
 public class RcloneConfigManager : IRcloneConfigManager
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
@@ -32,9 +27,30 @@ public class RcloneConfigManager : IRcloneConfigManager
         return Path.Combine(baseDir, AppConstants.RcloneConfigFileName);
     }
 
+    /// <summary>
+    /// Robustly parses an INI line to check if it represents the 'token' key, handling arbitrary whitespace.
+    /// </summary>
+    private static bool TryParseTokenLine(string line, out string prefix, out string value)
+    {
+        prefix = string.Empty;
+        value = string.Empty;
+        string trimmed = line.TrimStart();
+        
+        if (!trimmed.StartsWith("token", StringComparison.OrdinalIgnoreCase)) return false;
+        
+        int eqIndex = trimmed.IndexOf('=');
+        if (eqIndex < 0) return false;
+
+        string keyPart = trimmed.Substring(0, eqIndex).TrimEnd();
+        if (!keyPart.Equals("token", StringComparison.OrdinalIgnoreCase)) return false;
+
+        prefix = line.Substring(0, line.IndexOf('=') + 1);
+        value = trimmed.Substring(eqIndex + 1).Trim();
+        return true;
+    }
+
     public async Task CreateRemoteAsync(string name, string tokenJson, CancellationToken cancellationToken = default)
     {
-        // Encrypt the token before it ever touches the disk
         string encryptedToken = _cryptoService.EncryptToken(tokenJson);
 
         await _configLock.WaitAsync(cancellationToken);
@@ -43,7 +59,6 @@ public class RcloneConfigManager : IRcloneConfigManager
             Logger.Info("Creating new remote with at-rest encryption: {RemoteName}", name);
             string configPath = GetConfigPath();
             
-            // The INI section header requires square brackets.
             string configBlock = $"\n[{name}]\ntype = drive\nconfig_is_local = false\ntoken = {encryptedToken}\n";
             await File.AppendAllTextAsync(configPath, configBlock, cancellationToken);
         }
@@ -66,35 +81,72 @@ public class RcloneConfigManager : IRcloneConfigManager
 
             for (int i = 0; i < lines.Length; i++)
             {
-                string trimmed = lines[i].TrimStart();
-                if (trimmed.StartsWith("token = enc:", StringComparison.OrdinalIgnoreCase))
+                if (TryParseTokenLine(lines[i], out string prefix, out string tokenValue))
                 {
-                    try
+                    if (tokenValue.StartsWith("enc:", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Extract the encrypted payload (skip "token = ")
-                        string encryptedToken = trimmed.Substring(8).Trim();
-                        string decryptedToken = _cryptoService.DecryptToken(encryptedToken);
-
-                        // Preserve original indentation
-                        int indentLength = lines[i].Length - trimmed.Length;
-                        string indent = lines[i].Substring(0, indentLength);
-                        
-                        lines[i] = $"{indent}token = {decryptedToken}";
-                        isModified = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error(ex, "Failed to decrypt token in config file at line {0}. The vault key might be missing or invalid.", i + 1);
-                        throw;
+                        try
+                        {
+                            string decryptedToken = _cryptoService.DecryptToken(tokenValue);
+                            lines[i] = $"{prefix} {decryptedToken}";
+                            isModified = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error(ex, "Failed to decrypt token in config file at line {0}.", i + 1);
+                            throw;
+                        }
                     }
                 }
             }
 
             string result = string.Join(Environment.NewLine, lines);
-            // Ensure trailing newline for valid INI format
             if (isModified || lines.Length > 0) result += Environment.NewLine;
             
             return result;
+        }
+        finally
+        {
+            _configLock.Release();
+        }
+    }
+
+    public async Task UpdateTokenAsync(string remoteName, string newTokenJson, CancellationToken cancellationToken = default)
+    {
+        string encryptedToken = _cryptoService.EncryptToken(newTokenJson);
+        
+        await _configLock.WaitAsync(cancellationToken);
+        try
+        {
+            string path = GetConfigPath();
+            if (!File.Exists(path)) return;
+
+            var lines = await File.ReadAllLinesAsync(path, cancellationToken);
+            bool inTargetRemote = false;
+            bool updated = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string trimmed = lines[i].Trim();
+                if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+                {
+                    inTargetRemote = trimmed.Equals($"[{remoteName}]", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (inTargetRemote && TryParseTokenLine(lines[i], out string prefix, out _))
+                {
+                    lines[i] = $"{prefix} {encryptedToken}";
+                    updated = true;
+                    break;
+                }
+            }
+
+            if (updated)
+            {
+                await File.WriteAllLinesAsync(path, lines, cancellationToken);
+                Logger.Info("Successfully encrypted and saved refreshed token for remote: {0}", remoteName);
+            }
         }
         finally
         {
@@ -134,12 +186,9 @@ public class RcloneConfigManager : IRcloneConfigManager
             var lines = await File.ReadAllLinesAsync(path);
             bool needsMigration = false;
 
-            // Fast scan to determine if migration is needed
             foreach (var line in lines)
             {
-                string trimmed = line.TrimStart();
-                if (trimmed.StartsWith("token = ", StringComparison.OrdinalIgnoreCase) && 
-                    !trimmed.StartsWith("token = enc:", StringComparison.OrdinalIgnoreCase))
+                if (TryParseTokenLine(line, out _, out string tokenValue) && !tokenValue.StartsWith("enc:", StringComparison.OrdinalIgnoreCase))
                 {
                     needsMigration = true;
                     break;
@@ -157,17 +206,10 @@ public class RcloneConfigManager : IRcloneConfigManager
             {
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    string trimmed = lines[i].TrimStart();
-                    if (trimmed.StartsWith("token = ", StringComparison.OrdinalIgnoreCase) && 
-                        !trimmed.StartsWith("token = enc:", StringComparison.OrdinalIgnoreCase))
+                    if (TryParseTokenLine(lines[i], out string prefix, out string tokenValue) && !tokenValue.StartsWith("enc:", StringComparison.OrdinalIgnoreCase))
                     {
-                        string plainToken = trimmed.Substring(8).Trim();
-                        string encryptedToken = _cryptoService.EncryptToken(plainToken);
-                        
-                        int indentLength = lines[i].Length - trimmed.Length;
-                        string indent = lines[i].Substring(0, indentLength);
-                        
-                        lines[i] = $"{indent}token = {encryptedToken}";
+                        string encryptedToken = _cryptoService.EncryptToken(tokenValue);
+                        lines[i] = $"{prefix} {encryptedToken}";
                     }
                 }
 
