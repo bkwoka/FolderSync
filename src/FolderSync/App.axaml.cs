@@ -146,7 +146,12 @@ public partial class App : Application
 
         // ViewModels - Registered as singletons to prevent memory leaks with Messenger subscriptions
         services.AddSingleton<SyncViewModel>();
+        
+        // Browser Sub-ViewModels
+        services.AddSingleton<FolderSync.ViewModels.Dialogs.RenameDialogViewModel>();
+        services.AddSingleton<FolderSync.ViewModels.Dialogs.DeleteDialogViewModel>();
         services.AddSingleton<BrowserViewModel>();
+        
         services.AddSingleton<MainWindowViewModel>();
 
         // Settings Sub-ViewModels

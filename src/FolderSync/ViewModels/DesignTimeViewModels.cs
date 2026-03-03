@@ -131,7 +131,10 @@ public static class DesignTimeViewModels
         // =========================================================
         // 3. MOCK: BROWSER VIEW (BrowserView)
         // =========================================================
-        BrowserViewModel = new BrowserViewModel(dummyRclone, dummyConfig, dummyRename, dummyDelete, localizer)
+        var dummyRenameDialog = new FolderSync.ViewModels.Dialogs.RenameDialogViewModel(dummyRename, dummyConfig, localizer);
+        var dummyDeleteDialog = new FolderSync.ViewModels.Dialogs.DeleteDialogViewModel(dummyDelete, dummyConfig, localizer);
+
+        BrowserViewModel = new BrowserViewModel(dummyRclone, dummyConfig, dummyRenameDialog, dummyDeleteDialog, localizer)
         {
             StatusMessage = "Displaying 4 results (28 files total).",
             CurrentDriveInfo = "Master_BK (master@domain.com)",
