@@ -31,7 +31,7 @@ public partial class UnixMachineBoundVault : ISecretVault
         if (!Directory.Exists(_storageDir))
         {
             Directory.CreateDirectory(_storageDir);
-            RestrictPermissions(_storageDir);
+            RestrictDirectoryPermissions(_storageDir);
         }
         
         Logger.Info("UnixMachineBoundVault active - Soft Protection mode engaged.");
@@ -40,7 +40,30 @@ public partial class UnixMachineBoundVault : ISecretVault
     private string GetPath(string key) => Path.Combine(_storageDir, $"{key}.enc");
     private string GetMetaPath() => Path.Combine(_storageDir, "vault.meta");
 
-    private static void RestrictPermissions(string path)
+    /// <summary>
+    /// Restricts permissions for a directory. In Unix, directories require the Execute bit 
+    /// to allow traversal and file creation inside them (chmod 700).
+    /// </summary>
+    private static void RestrictDirectoryPermissions(string path)
+    {
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                var info = new DirectoryInfo(path);
+                info.UnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to set strict Unix directory permissions on {0}", path);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Restricts permissions for a file. Files only need Read/Write access (chmod 600).
+    /// </summary>
+    private static void RestrictFilePermissions(string path)
     {
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
@@ -96,7 +119,7 @@ public partial class UnixMachineBoundVault : ISecretVault
         {
             byte[] newSalt = RandomNumberGenerator.GetBytes(32);
             File.WriteAllBytes(metaPath, newSalt);
-            RestrictPermissions(metaPath);
+            RestrictFilePermissions(metaPath);
         }
 
         byte[] salt = File.ReadAllBytes(metaPath);
@@ -126,7 +149,7 @@ public partial class UnixMachineBoundVault : ISecretVault
 
         string path = GetPath(key);
         File.WriteAllBytes(path, ms.ToArray());
-        RestrictPermissions(path);
+        RestrictFilePermissions(path);
         
         Logger.Info("Secret '{0}' securely stored using Machine-Bound AES-GCM.", key);
     }
