@@ -49,7 +49,7 @@ public class SyncEngineEdgeCaseTests
         var progressUpdater = new SyncProgressReport(v => progressValues.Add(v));
 
         // Act
-        await _sut.RunFullSync(emptyList, master, new Progress<SyncProgressEvent>(), progressUpdater);
+        await _sut.RunFullSync(emptyList, master, new Mock<IProgress<SyncProgressEvent>>().Object, progressUpdater);
 
         // Assert – no stage must run for an empty list
         _mockSanitize.Verify(
@@ -69,7 +69,7 @@ public class SyncEngineEdgeCaseTests
         var twoRemotes = new List<RemoteInfo> { master, secondary };
 
         // Act
-        await _sut.RunFullSync(twoRemotes, master, new Progress<SyncProgressEvent>(), new Progress<double>());
+        await _sut.RunFullSync(twoRemotes, master, new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert – sanitize/consolidate run twice each, crossAccount runs once
         _mockSanitize.Verify(
@@ -99,7 +99,7 @@ public class SyncEngineEdgeCaseTests
         var progressUpdater = new SyncProgressReport(v => progressValues.Add(v));
 
         // Act
-        await _sut.RunFullSync(remotes, master, new Progress<SyncProgressEvent>(), progressUpdater);
+        await _sut.RunFullSync(remotes, master, new Mock<IProgress<SyncProgressEvent>>().Object, progressUpdater);
 
         // Assert – verify monotonic progress and accurate completion
         progressValues.Should().Contain(0.0, "progress must start at 0");

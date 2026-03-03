@@ -86,7 +86,7 @@ public class SyncEngineTests
 
         // Act
         Func<Task> act = async () =>
-            await _sut.RunFullSync(null!, _master, new Progress<SyncProgressEvent>(), mockProgress.Object);
+            await _sut.RunFullSync(null!, _master, new Mock<IProgress<SyncProgressEvent>>().Object, mockProgress.Object);
 
         await act.Should().NotThrowAsync("a null remotes list must be handled gracefully");
         mockProgress.Verify(x => x.Report(100.0), Times.AtLeastOnce);

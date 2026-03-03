@@ -84,7 +84,7 @@ public class SyncEngineStageOrderTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await _sut.RunFullSync(_twoRemotes, _master, new Progress<SyncProgressEvent>(), new Progress<double>());
+        await _sut.RunFullSync(_twoRemotes, _master, new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert
         callOrder.Should().NotBeEmpty();
@@ -117,7 +117,7 @@ public class SyncEngineStageOrderTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await _sut.RunFullSync(_twoRemotes, _master, new Progress<SyncProgressEvent>(), new Progress<double>());
+        await _sut.RunFullSync(_twoRemotes, _master, new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert
         callOrder.Should().HaveCount(5);
@@ -161,7 +161,7 @@ public class SyncEngineStageOrderTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await _sut.RunFullSync(_twoRemotes, _master, new Progress<SyncProgressEvent>(), new Progress<double>());
+        await _sut.RunFullSync(_twoRemotes, _master, new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert
         masterCallOrder[0].Should().Be("sanitize");
@@ -193,7 +193,7 @@ public class SyncEngineStageOrderTests
 
         // Act
         Func<Task> act = () =>
-            _sut.RunFullSync(_twoRemotes, _master, new Progress<SyncProgressEvent>(), new Progress<double>(), cts.Token);
+            _sut.RunFullSync(_twoRemotes, _master, new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object, cts.Token);
 
         // Assert
         await act.Should().ThrowAsync<OperationCanceledException>();

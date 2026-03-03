@@ -105,7 +105,7 @@ public class SyncConsolidateStageExtendedTests
         SetupFileContent(TargetId, fileName, MakeJson(sharedCreateTime));
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // Step 1: Older target version must be deleted to make room for the newer orphan version.
@@ -138,7 +138,7 @@ public class SyncConsolidateStageExtendedTests
         SetupFileListing(TargetId, new List<RcloneItem>()); // target is empty
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // No identity inspection required – just move the file directly.
@@ -175,7 +175,7 @@ public class SyncConsolidateStageExtendedTests
         SetupFileContent(TargetId, fileName, MakeJson("2026-02-20T14:00:00Z")); // different conversation
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // The orphan must be moved but under a NEW name (timestamp suffix) to avoid overwriting
@@ -222,7 +222,7 @@ public class SyncConsolidateStageExtendedTests
 
         // Act
         Func<Task> act = async () =>
-            await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), cts.Token);
+            await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, cts.Token);
 
         // Assert
         await act.Should().ThrowAsync<OperationCanceledException>(
@@ -246,7 +246,7 @@ public class SyncConsolidateStageExtendedTests
             .ReturnsAsync(dirs);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(
@@ -277,7 +277,7 @@ public class SyncConsolidateStageExtendedTests
         SetupFileListing(TargetId, new List<RcloneItem>());
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(
@@ -304,7 +304,7 @@ public class SyncConsolidateStageExtendedTests
             .ReturnsAsync(true);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert – after files are moved, the orphan folder must be cleaned up via the API
         _mockGoogleApi.Verify(x => x.DeleteFolderIfOwnedAsync(RemoteName, OrphanId, It.IsAny<CancellationToken>()),

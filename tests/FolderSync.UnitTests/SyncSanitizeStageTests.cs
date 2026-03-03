@@ -46,7 +46,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(files);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(It.IsAny<string[]>(), null, It.IsAny<CancellationToken>(), null), 
@@ -71,7 +71,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(duplicateFiles);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(It.Is<string[]>(args => args[0] == "moveto"), 
@@ -93,7 +93,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(files);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(It.Is<string[]>(a => a[0] == "moveto"), 
@@ -119,7 +119,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(files);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(It.Is<string[]>(a => a[0] == "moveto"), 
@@ -135,7 +135,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(new List<RcloneItem>()); 
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // No operations should be performed on an empty drive.
@@ -161,7 +161,7 @@ public class SyncSanitizeStageTests
             .ReturnsAsync(files);
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(x => x.ExecuteCommandAsync(It.Is<string[]>(a => a[0] == "moveto"), 
@@ -190,7 +190,7 @@ public class SyncSanitizeStageTests
             .ThrowsAsync(new InvalidOperationException("Rclone: file locked by another process"));
 
         // Act & Assert
-        await _sut.Awaiting(x => x.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None))
+        await _sut.Awaiting(x => x.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None))
             .Should().ThrowAsync<InvalidOperationException>("sanitization failures must halt the process to maintain data integrity");
     }
 
@@ -205,7 +205,7 @@ public class SyncSanitizeStageTests
             .ThrowsAsync(new OperationCanceledException());
 
         // Act & Assert
-        await _sut.Awaiting(x => x.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), cts.Token))
+        await _sut.Awaiting(x => x.RunAsync(_remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, cts.Token))
             .Should().ThrowAsync<OperationCanceledException>();
     }
 }

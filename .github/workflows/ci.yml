@@ -1,0 +1,34 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  test:
+    name: Run Unit Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj
+
+      - name: Build
+        run: dotnet build tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release --no-restore
+
+      - name: Run Unit Tests
+        run: dotnet test tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release --no-build

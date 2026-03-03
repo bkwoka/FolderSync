@@ -51,7 +51,7 @@ public class SyncConsolidateStageTests
                    .ReturnsAsync(dirs);
 
         // Act
-        await _sut.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // No operations should be initiated if only the target directory exists.
@@ -81,7 +81,7 @@ public class SyncConsolidateStageTests
         _mockRclone.Setup(x => x.ReadFileContentAsync(It.IsAny<string>(), "target123", "Chat.prompt", It.IsAny<CancellationToken>())).ReturnsAsync(GetMockJson("2026-01-01T10:00:00Z"));
 
         // Act
-        await _sut.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         // Older versions from the orphan should not overwrite matching or newer versions in the target directory.
@@ -111,7 +111,7 @@ public class SyncConsolidateStageTests
 
         // Act & Assert
         // I/O failures should be intercepted and logged without terminating the entire synchronization pipeline.
-        await _sut.Awaiting(x => x.RunAsync(remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None))
+        await _sut.Awaiting(x => x.RunAsync(remote, new Mock<IProgress<FolderSync.Helpers.SyncProgressEvent>>().Object, CancellationToken.None))
             .Should().NotThrowAsync();
     }
 }

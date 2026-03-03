@@ -78,7 +78,7 @@ public class SyncConsolidateStageHistoryFileTests
             .ReturnsAsync(new List<RcloneItem>());
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(
@@ -102,7 +102,7 @@ public class SyncConsolidateStageHistoryFileTests
             .ReturnsAsync(new List<RcloneItem>());
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockRclone.Verify(
@@ -123,7 +123,7 @@ public class SyncConsolidateStageHistoryFileTests
             .ReturnsAsync(new List<RcloneItem>());
 
         // Act
-        await _sut.RunAsync(_remote, new Progress<SyncProgressEvent>(), CancellationToken.None);
+        await _sut.RunAsync(_remote, new Mock<IProgress<SyncProgressEvent>>().Object, CancellationToken.None);
 
         // Assert
         _mockGoogleApi.Verify(
