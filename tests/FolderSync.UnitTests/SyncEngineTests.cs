@@ -57,20 +57,15 @@ public class SyncEngineTests
     public async Task RunFullSync_WithLessThanTwoRemotes_ShouldReportErrorAndReturnEarly()
     {
         // Arrange
-        var reportedEvents = new List<SyncProgressEvent>();
-        var uiLogger = new Progress<SyncProgressEvent>(e => reportedEvents.Add(e));
-        var progressValues = new List<double>();
-        var progressUpdater = new Progress<double>(v => progressValues.Add(v));
-
+        var mockUiLogger = new Mock<IProgress<SyncProgressEvent>>();
+        var mockProgress = new Mock<IProgress<double>>();
+        
         var singleRemote = new List<RemoteInfo> { _master };
 
         // Act
-        Func<Task> act = async () =>
-            await _sut.RunFullSync(singleRemote, _master, uiLogger, progressUpdater);
+        await _sut.RunFullSync(singleRemote, _master, mockUiLogger.Object, mockProgress.Object);
 
         // Assert
-        await act.Should().NotThrowAsync("insufficient remotes is a user-facing error, not an exception");
-
         // No sync stages should have been invoked
         _mockSanitize.Verify(x => x.RunAsync(It.IsAny<RemoteInfo>(), It.IsAny<IProgress<SyncProgressEvent>>(), It.IsAny<CancellationToken>()),
             Times.Never, "sanitize stage must not run when there are fewer than 2 remotes");
@@ -80,7 +75,7 @@ public class SyncEngineTests
             Times.Never, "cross-account stage must not run when there are fewer than 2 remotes");
 
         // Progress must be reported as 100 (complete / skipped)
-        progressValues.Should().Contain(100, "progress must be finalized at 100 even when aborting early");
+        mockProgress.Verify(x => x.Report(100), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -106,7 +101,7 @@ public class SyncEngineTests
         // Act
         Func<Task> act = async () =>
             await _sut.RunFullSync(_twoRemotes, outsideMaster,
-                new Progress<SyncProgressEvent>(), new Progress<double>());
+                new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert
         await act.Should().ThrowExactlyAsync<ArgumentException>(
@@ -121,7 +116,7 @@ public class SyncEngineTests
         // Arrange
         // Act
         await _sut.RunFullSync(_twoRemotes, _master,
-            new Progress<SyncProgressEvent>(), new Progress<double>());
+            new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert – both stages must run once per remote (2 remotes = 2 invocations each)
         _mockSanitize.Verify(x => x.RunAsync(
@@ -144,7 +139,7 @@ public class SyncEngineTests
     {
         // Act
         await _sut.RunFullSync(_twoRemotes, _master,
-            new Progress<SyncProgressEvent>(), new Progress<double>());
+            new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert – CrossAccount runs once for the entire remote set, not per-remote
         _mockCrossAccount.Verify(x => x.RunAsync(
@@ -166,7 +161,7 @@ public class SyncEngineTests
         var mockProgress = new Mock<IProgress<double>>();
 
         // Act
-        await _sut.RunFullSync(_twoRemotes, _master, new Progress<SyncProgressEvent>(), mockProgress.Object);
+        await _sut.RunFullSync(_twoRemotes, _master, new Mock<IProgress<SyncProgressEvent>>().Object, mockProgress.Object);
 
         // Assert
         // The progress must restart at 0 and conclude precisely at 100 on successful completion.
@@ -187,7 +182,7 @@ public class SyncEngineTests
         // Act
         Func<Task> act = async () =>
             await _sut.RunFullSync(_twoRemotes, _master,
-                new Progress<SyncProgressEvent>(), new Progress<double>());
+                new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object);
 
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>(
@@ -214,7 +209,7 @@ public class SyncEngineTests
         // Act
         Func<Task> act = async () =>
             await _sut.RunFullSync(_twoRemotes, _master,
-                new Progress<SyncProgressEvent>(), new Progress<double>(), cts.Token);
+                new Mock<IProgress<SyncProgressEvent>>().Object, new Mock<IProgress<double>>().Object, cts.Token);
 
         // Assert
         await act.Should().ThrowAsync<OperationCanceledException>(
@@ -238,7 +233,7 @@ public class SyncEngineTests
         // Act
         Func<Task> act = async () =>
             await _sut.RunFullSync(_twoRemotes, _master,
-                new Progress<SyncProgressEvent>(), mockProgress.Object, cts.Token);
+                new Mock<IProgress<SyncProgressEvent>>().Object, mockProgress.Object, cts.Token);
 
         // Assert
         await act.Should().ThrowAsync<OperationCanceledException>();
