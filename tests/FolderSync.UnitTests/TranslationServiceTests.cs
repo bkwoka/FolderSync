@@ -185,6 +185,5 @@ public class TranslationServiceTests : IDisposable
     {
         public string this[string key] => $"MOCK:{key}";
         public CultureInfo Culture { get; set; } = CultureInfo.InvariantCulture;
-        public event PropertyChangedEventHandler? PropertyChanged;
     }
 }
