@@ -6,6 +6,7 @@ using FolderSync.Models;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
 using FolderSync.Services.SyncStages;
+using FolderSync.ViewModels.Settings;
 
 namespace FolderSync.ViewModels;
 
@@ -86,20 +87,32 @@ public static class DesignTimeViewModels
         // =========================================================
         // 2. MOCK: SETTINGS VIEW (SettingsView)
         // =========================================================
-        SettingsViewModel = new SettingsViewModel(dummyConfig, localizer, dummyBootstrapper, dummyFilePicker,
-            dummyUpdate, dummyDriveOrchestrator, dummyProfileOrchestrator)
+        var dummyDriveMgmt = new DriveManagementViewModel(dummyDriveOrchestrator, dummyProfileOrchestrator, dummyBootstrapper, localizer)
         {
-            StatusMessage = "Ready to work",
-            CurrentMasterName = "Master_BK (remote_master)",
-            OauthCountdownText = "Waiting for browser... 04:23",
-
+            CurrentMasterName = "Master_BK (remote_master)"
+        };
+        
+        var dummyOAuth = new OAuthFlowViewModel(dummyDriveOrchestrator, dummyConfig, localizer)
+        {
+            OauthCountdownText = "Waiting for browser... 04:23"
+        };
+        
+        var dummyBackup = new ProfileBackupViewModel(dummyProfileOrchestrator, dummyFilePicker, localizer);
+        
+        var dummyPrefs = new PreferencesViewModel(dummyConfig, dummyUpdate, localizer)
+        {
             IsUpdateAvailable = true,
             UpdateMessage = "🌟 New version available (v1.1.0)! Network stability improved.",
             AppVersionDisplay = "1.0.0",
         };
 
-        if (SettingsViewModel.AvailableLanguages.Count > 1)
-            SettingsViewModel.SelectedLanguage = SettingsViewModel.AvailableLanguages[1];
+        if (dummyPrefs.AvailableLanguages.Count > 1)
+            dummyPrefs.SelectedLanguage = dummyPrefs.AvailableLanguages[1];
+
+        SettingsViewModel = new SettingsViewModel(dummyDriveMgmt, dummyOAuth, dummyBackup, dummyPrefs, localizer)
+        {
+            StatusMessage = "Ready to work"
+        };
 
         var masterDrive =
             new RemoteInfo("Master_BK", "remote_master", "195h96kTLGZBL4-eE02REf4kqow4fn2u6", "master@domain.com")
@@ -111,9 +124,9 @@ public static class DesignTimeViewModels
             new RemoteInfo("Konto Firmowe", "remote_work", "399x11kPLGZAL4-yY09REf4kqow4fn1v8", "work@company.com")
                 { IsMaster = false };
 
-        SettingsViewModel.SavedRemotes.Add(masterDrive);
-        SettingsViewModel.SavedRemotes.Add(slaveDrive1);
-        SettingsViewModel.SavedRemotes.Add(slaveDrive2);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(masterDrive);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(slaveDrive1);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(slaveDrive2);
 
         // =========================================================
         // 3. MOCK: BROWSER VIEW (BrowserView)

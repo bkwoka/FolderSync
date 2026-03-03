@@ -5,6 +5,7 @@ using Avalonia.Data.Core.Plugins;
 using System.Linq;
 using Avalonia.Markup.Xaml;
 using FolderSync.ViewModels;
+using FolderSync.ViewModels.Settings;
 using FolderSync.Views;
 using System;
 using System.IO;
@@ -143,9 +144,15 @@ public partial class App : Application
 
         // ViewModels - Registered as singletons to prevent memory leaks with Messenger subscriptions
         services.AddSingleton<SyncViewModel>();
-        services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<BrowserViewModel>();
         services.AddSingleton<MainWindowViewModel>();
+
+        // Settings Sub-ViewModels
+        services.AddSingleton<DriveManagementViewModel>();
+        services.AddSingleton<OAuthFlowViewModel>();
+        services.AddSingleton<ProfileBackupViewModel>();
+        services.AddSingleton<PreferencesViewModel>();
+        services.AddSingleton<SettingsViewModel>();
 
         Services = services.BuildServiceProvider();
 
