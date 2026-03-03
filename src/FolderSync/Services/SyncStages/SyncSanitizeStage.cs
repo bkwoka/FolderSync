@@ -64,7 +64,7 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
                     
                     try
                     {
-                        // Use server-side 'moveto' for instant renaming without data transfer
+                        // Use server-side 'moveto' for instant renaming without data transfer to minimize I/O overhead.
                         await rclone.ExecuteCommandAsync(new[] { "moveto", $"{rootPath}{copy.Name}", $"{rootPath}{newName}", "--drive-server-side-across-configs" }, null, cancellationToken);
                     }
                     catch (OperationCanceledException)
@@ -73,7 +73,13 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
                     }
                     catch (Exception ex)
                     {
-                        Logger.Error(ex, "Failed to resolve collision for '{0}' on {1}. Skipping this instance.", copy.Name, remote.FriendlyName);
+                        // Fail-Fast: Do not suppress sanitization failures. 
+                        // If file renaming fails, proceeding to the consolidation stage would be based on an 
+                        // inconsistent remote state, potentially leading to data loss or further corruption.
+                        Logger.Error(ex, "Critical failure while resolving collision for '{0}' on {1}.", copy.Name, remote.FriendlyName);
+                        
+                        string errMsg = string.Format(localizer["Error_SanitizeFailed"], copy.Name, remote.FriendlyName);
+                        throw new InvalidOperationException(errMsg, ex);
                     }
                 }
             }

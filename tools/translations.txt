@@ -1,0 +1,2 @@
+Key | English | Polish
+Error_SanitizeFailed | Failed to resolve duplicates for '{0}' on {1}. Sync aborted to prevent data corruption. | Nie udało się rozwiązać duplikatów dla '{0}' na dysku {1}. Synchronizacja przerwana, aby zapobiec uszkodzeniu danych.
