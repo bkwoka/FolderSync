@@ -24,16 +24,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # Krok 1: Przywracanie zależności dla całego rozwiązania (Aplikacja + Testy)
+      # Step 1: Restore dependencies for the entire solution (App + Unit Tests)
       - name: Restore Dependencies
         run: dotnet restore FolderSync.sln
 
-      # Krok 2: Budowanie całego rozwiązania. 
-      # Gwarantuje to, że główny projekt (FolderSync.csproj) kompiluje się poprawnie na danym OS.
+      # Step 2: Build the complete solution in Release configuration.
+      # This ensures the main application and all dependencies are cross-platform compatible.
       - name: Build Solution
         run: dotnet build FolderSync.sln -c Release --no-restore
 
-      # Krok 3: Uruchomienie testów jednostkowych.
-      # Używamy flagi --no-build, ponieważ projekt został już zbudowany w poprzednim kroku.
+      # Step 3: Execute unit tests across the target operating system.
+      # Utilizes --no-build as the solution was pre-compiled in the previous step to optimize pipeline speed.
       - name: Run Unit Tests
         run: dotnet test tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release --no-build
