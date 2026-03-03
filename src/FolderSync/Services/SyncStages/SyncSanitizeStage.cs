@@ -41,7 +41,7 @@ public class SyncSanitizeStage(IRcloneService rclone, ITranslationService locali
             var id = Guid.NewGuid();
             string template = localizer["Log_Stage0_FixingDuplicates"];
             string localizedMsg = string.Format(System.Globalization.CultureInfo.CurrentCulture, template, remoteName, count);
-            uiLogger.Report(new SyncProgressEvent(id, $"    {localizedMsg}", false));
+            uiLogger.Report(new SyncProgressEvent(id, localizedMsg, false, LogEntryType.Normal, 1));
             
             foreach (var group in duplicates)
             {

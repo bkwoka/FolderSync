@@ -33,7 +33,7 @@ public static class DesignTimeViewModels
         var localizer = TranslationService.Instance;
 
         var dummySanitize = new SyncSanitizeStage(dummyRclone, localizer);
-        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, dummyGoogleApi, localizer);
+        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, dummyGoogleApi, localizer, new PromptMetadataParser());
         var dummyCrossAccount = new SyncCrossAccountStage(dummyRclone, localizer);
         var dummySync = new SyncEngine(dummySanitize, dummyConsolidate, dummyCrossAccount, localizer);
 
@@ -57,32 +57,19 @@ public static class DesignTimeViewModels
         };
 
         // Mock data
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Sanitization and Consolidation", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Sanitizing conversation names", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_2: Sanitizing conversation names", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Fixing name duplicates (2)", false));
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "    G_Drive_1: Consolidation", false));
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "    G_Drive_2: Consolidation", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Moving contents of redundant folder 1A2B3C", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Deep analysis of 'Important project.prompt'", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "\nUpdating conversations across accounts\n", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "  ⇄ Aggregation: Checking for newer conversations on secondary drives", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    ⬇ Downloading 3 newer conversations from G_Drive_2", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "\n  ⇄ Distribution: Broadcasting updated conversations to other drives", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    ⬆ Uploading 5 newest conversations to G_Drive_1", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Sanitization and Consolidation", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Sanitizing conversation names", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_2: Sanitizing conversation names", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Fixing name duplicates (2)", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Consolidation", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_2: Consolidation", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Moving contents of redundant folder 1A2B3C", false, LogEntryType.System, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Deep analysis of 'Important project.prompt'", false, LogEntryType.Inspect, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "\nUpdating conversations across accounts\n", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Aggregation: Checking for newer conversations on secondary drives", false, LogEntryType.Network));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Downloading 3 newer conversations from G_Drive_2", false, LogEntryType.Download, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "\nDistribution: Broadcasting updated conversations to other drives", false, LogEntryType.Network));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Uploading 5 newest conversations to G_Drive_1", false, LogEntryType.Upload, 1));
 
         // =========================================================
         // 2. MOCK: SETTINGS VIEW (SettingsView)

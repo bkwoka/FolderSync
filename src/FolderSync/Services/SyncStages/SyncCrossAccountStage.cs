@@ -11,7 +11,7 @@ using NLog;
 namespace FolderSync.Services.SyncStages;
 
 /// <summary>
-/// Handles the cross-account synchronization phase, including aggregation to the master drive 
+/// Handles the cross-account synchronization phase, including aggregation to the master drive
 /// and distribution to slave drives.
 /// </summary>
 public class SyncCrossAccountStage(IRcloneService rclone, ITranslationService localizer) : ISyncCrossAccountStage
@@ -27,7 +27,7 @@ public class SyncCrossAccountStage(IRcloneService rclone, ITranslationService lo
         string masterPath = $"{master.RcloneRemote},root_folder_id={master.FolderId}:";
 
         var aggId = Guid.NewGuid();
-        uiLogger.Report(new SyncProgressEvent(aggId, $"  ⇄ {localizer["Log_Stage2_Aggregate"]}", false));
+        uiLogger.Report(new SyncProgressEvent(aggId, localizer["Log_Stage2_Aggregate"], false, LogEntryType.Network));
         uiLogger.Report(new SyncProgressEvent(aggId, "", true));
         var masterFiles = await rclone.ListItemsAsync(masterPath, false, cancellationToken);
 
@@ -59,8 +59,8 @@ public class SyncCrossAccountStage(IRcloneService rclone, ITranslationService lo
             {
                 var downloadTaskId = Guid.NewGuid();
                 uiLogger.Report(new SyncProgressEvent(downloadTaskId,
-                    $"    ⬇ {string.Format(localizer["Log_Stage2_Download"], toCopy.Count, remote.FriendlyName)}",
-                    false));
+                    string.Format(localizer["Log_Stage2_Download"], toCopy.Count, remote.FriendlyName),
+                    false, LogEntryType.Download, 1));
                 await rclone.ExecuteCommandAsync(
                     new[] { "copy", sourcePath, masterPath, "--files-from-raw", "-", 
                         "--drive-server-side-across-configs", "--drive-use-trash=false" },
@@ -72,7 +72,7 @@ public class SyncCrossAccountStage(IRcloneService rclone, ITranslationService lo
         }
 
         var distId = Guid.NewGuid();
-        uiLogger.Report(new SyncProgressEvent(distId, $"\n  ⇄ {localizer["Log_Stage2_Distribute"]}", false));
+        uiLogger.Report(new SyncProgressEvent(distId, $"\n{localizer["Log_Stage2_Distribute"]}", false, LogEntryType.Network));
         uiLogger.Report(new SyncProgressEvent(distId, "", true));
 
         // Refresh the master file list after full aggregation to include all newly uploaded conversations.
@@ -106,8 +106,8 @@ public class SyncCrossAccountStage(IRcloneService rclone, ITranslationService lo
             {
                 var uploadTaskId = Guid.NewGuid();
                 uiLogger.Report(new SyncProgressEvent(uploadTaskId,
-                    $"    ⬆ {string.Format(localizer["Log_Stage2_Upload"], toCopy.Count, remote.FriendlyName)}",
-                    false));
+                    string.Format(localizer["Log_Stage2_Upload"], toCopy.Count, remote.FriendlyName),
+                    false, LogEntryType.Upload, 1));
                 await rclone.ExecuteCommandAsync(
                     new[] { "copy", masterPath, destPath, "--files-from-raw", "-", 
                         "--drive-server-side-across-configs", "--drive-use-trash=false" },

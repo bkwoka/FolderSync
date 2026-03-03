@@ -131,6 +131,7 @@ public partial class App : Application
         services.AddSingleton<IUpdateService, UpdateService>();
         services.AddSingleton<IConfigService, ConfigService>();
         services.AddSingleton<ITranslationService>(TranslationService.Instance);
+        services.AddSingleton<IPromptMetadataParser, PromptMetadataParser>();
 
         // Orchestrators and Business Logic
         services.AddSingleton<IRenameOrchestratorService, RenameOrchestratorService>();

@@ -1,17 +1,18 @@
 using FluentAssertions;
 using FolderSync.Helpers;
+using FolderSync.Models;
 using FolderSync.Services.Interfaces;
 using FolderSync.ViewModels;
 using Moq;
 using System;
-using System.Linq; // Added for .Last() and .First()
+using System.Linq;
 using Xunit;
 
 namespace FolderSync.UnitTests;
 
 /// <summary>
-/// Unit tests for <see cref="SyncViewModel"/>.
-/// Validates UI mapping, log icon coloring, and progress reporting.
+/// Unit tests for <see cref="SyncViewModel"/> logging logic.
+/// Validates log management, retention, and Task ID based activity state updates.
 /// </summary>
 public class SyncViewModelLogTests
 {
@@ -28,35 +29,22 @@ public class SyncViewModelLogTests
         _sut = new SyncViewModel(mockEngine.Object, mockConfig.Object, mockRclone.Object, mockLocalizer.Object);
     }
 
-    // ─── Visual Mapping ───────────────────────────────────────────────────────
+    // ─── Visual & Data Mapping ───────────────────────────────────────────────
     
-    [Theory]
-    [InlineData("📦 Moving", "#8899A6")]
-    [InlineData("🔍 Scanning", "#0699BE")]
-    [InlineData("⇄ Network", "#0699BE")]
-    [InlineData("⬇ Downloading", "#6CCC3C")]
-    [InlineData("⬆ Uploading", "#6CCC3C")]
-    public void AddLog_WithVariousEmojis_ShouldMapToCorrectIconColor(string message, string expectedColor)
+    [Fact]
+    public void AddLog_WithExplicitStructuredData_ShouldMapToLogEntryProperties()
     {
         // Act
-        _sut.AddLog(new SyncProgressEvent(Guid.NewGuid(), message, false));
+        var taskId = Guid.NewGuid();
+        _sut.AddLog(new SyncProgressEvent(taskId, "Processing...", false, LogEntryType.Inspect, 2));
 
         // Assert
         var log = _sut.Logs[0];
-        log.IconColor.Should().BeEquivalentTo(expectedColor);
-        log.HasIcon.Should().BeTrue();
-    }
-
-    [Fact]
-    public void AddLog_WithUnrecognizedPrefix_ShouldUseDefaultColorAndHaveNoIcon()
-    {
-        // Act
-        _sut.AddLog(new SyncProgressEvent(Guid.NewGuid(), "🚀 Rocket message", false));
-
-        // Assert
-        var entry = _sut.Logs[0];
-        entry.HasIcon.Should().BeFalse();
-        entry.IconColor.Should().Be("#e4eaec");
+        log.Id.Should().Be(taskId);
+        log.Type.Should().Be(LogEntryType.Inspect);
+        log.IndentLevel.Should().Be(2);
+        log.Text.Should().Be("Processing...");
+        log.Margin.Left.Should().Be(48.0); // 2 * 24
     }
 
     // ─── Log Retention & Rotation ──────────────────────────────────────────────
@@ -81,18 +69,6 @@ public class SyncViewModelLogTests
     // ─── Formatting & Indentation ────────────────────────────────────────────
 
     [Fact]
-    public void AddLog_WithLeadingSpaces_ShouldSetMarginAndTrimText()
-    {
-        // Act – 4 spaces = 24px margin (4 * 6px)
-        _sut.AddLog(new SyncProgressEvent(Guid.NewGuid(), "    Indented message", false));
-
-        // Assert
-        var entry = _sut.Logs[0];
-        entry.LeftMargin.Should().Be(24.0);
-        entry.Text.Should().Be("Indented message");
-    }
-
-    [Fact]
     public void AddLog_WithWhitespaceMessage_ShouldAddAsEmptySeparator()
     {
         // Act
@@ -101,7 +77,6 @@ public class SyncViewModelLogTests
         // Assert
         var entry = _sut.Logs[0];
         entry.Text.Should().BeEmpty();
-        entry.HasIcon.Should().BeFalse();
     }
 
     // ─── Task Lifecycle State ──────────────────────────────────────────────────
@@ -113,7 +88,7 @@ public class SyncViewModelLogTests
         var taskId = Guid.NewGuid();
 
         // 1. Start Task
-        _sut.AddLog(new SyncProgressEvent(taskId, "⬆ Uploading...", false));
+        _sut.AddLog(new SyncProgressEvent(taskId, "Uploading...", false, LogEntryType.Upload));
         _sut.Logs.Last().IsActive.Should().BeTrue("started task must display activity status (spinner)");
 
         // 2. Complete Task

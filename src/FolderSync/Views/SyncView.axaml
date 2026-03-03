@@ -5,10 +5,17 @@
              xmlns:vm="using:FolderSync.ViewModels"
              xmlns:helpers="using:FolderSync.Helpers"
              xmlns:i18N="using:FolderSync.MarkupExtensions"
+             xmlns:conv="using:FolderSync.Converters"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="FolderSync.Views.SyncView"
              x:DataType="vm:SyncViewModel"
              d:DataContext="{x:Static vm:DesignTimeViewModels.SyncViewModel}">
+
+    <UserControl.Resources>
+        <conv:LogEntryTypeToIconConverter x:Key="TypeToIcon" />
+        <conv:LogEntryTypeToColorConverter x:Key="TypeToColor" />
+        <conv:LogEntryTypeToVisibilityConverter x:Key="TypeToVisibility" />
+    </UserControl.Resources>
 
     <Panel>
         <Grid RowDefinitions="Auto, *, Auto" Margin="20">
@@ -55,9 +62,9 @@
 
                                     <!-- Status indicator icon -->
                                     <PathIcon Grid.Column="0" 
-                                              Data="{Binding IconPath}"
-                                              Foreground="{Binding IconColor}"
-                                              IsVisible="{Binding HasIcon}"
+                                              Data="{Binding Type, Converter={StaticResource TypeToIcon}}"
+                                              Foreground="{Binding Type, Converter={StaticResource TypeToColor}}"
+                                              IsVisible="{Binding Type, Converter={StaticResource TypeToVisibility}}"
                                               Width="10" Height="10"
                                               Margin="0,0,8,1"
                                               VerticalAlignment="Center" />

@@ -31,7 +31,7 @@ public class SyncConsolidateStageTests
         _mockLocalizer = new Mock<ITranslationService>();
         _mockLocalizer.Setup(l => l[It.IsAny<string>()]).Returns("Mocked String");
 
-        _sut = new SyncConsolidateStage(_mockRclone.Object, _mockGoogleApi.Object, _mockLocalizer.Object);
+        _sut = new SyncConsolidateStage(_mockRclone.Object, _mockGoogleApi.Object, _mockLocalizer.Object, new PromptMetadataParser());
     }
 
     private string GetMockJson(string createTime) =>

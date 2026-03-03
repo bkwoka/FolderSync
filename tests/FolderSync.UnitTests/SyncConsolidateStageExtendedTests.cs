@@ -47,7 +47,7 @@ public class SyncConsolidateStageExtendedTests
         _mockLocalizer.Setup(l => l[It.IsAny<string>()]).Returns("{0}{1}");
 
         _remote = new RemoteInfo("Test Drive", RemoteName, TargetId);
-        _sut = new SyncConsolidateStage(_mockRclone.Object, _mockGoogleApi.Object, _mockLocalizer.Object);
+        _sut = new SyncConsolidateStage(_mockRclone.Object, _mockGoogleApi.Object, _mockLocalizer.Object, new PromptMetadataParser());
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────
