@@ -120,6 +120,17 @@ public partial class App : Application
             });
 
         // Infrastructure Services
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<ISecretVault, WindowsSecretVault>();
+        }
+        else
+        {
+            services.AddSingleton<ISecretVault, UnixMachineBoundVault>();
+        }
+
+        services.AddSingleton<ITokenCryptoService, TokenCryptoService>();
+        
         services.AddSingleton<IRcloneBootstrapper, RcloneBootstrapper>();
         services.AddSingleton<IRcloneConfigManager, RcloneConfigManager>();
         services.AddSingleton<IRcloneProcessRunner, RcloneProcessRunner>();
@@ -167,6 +178,13 @@ public partial class App : Application
         // Initialize translation instance via DI
         var translationService = Services.GetRequiredService<ITranslationService>();
         TranslationService.SetInstance(translationService);
+
+        // CRASH RESILIENCE: Clean up any orphaned temporary config files from previous abnormal terminations
+        var configManager = Services.GetRequiredService<IRcloneConfigManager>();
+        configManager.CleanupStaleTempConfigs();
+        
+        // MIGRATION: Ensure all legacy plaintext tokens are encrypted before the application starts
+        Task.Run(() => configManager.MigratePlaintextTokensAsync()).Wait();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

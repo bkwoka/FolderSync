@@ -7,8 +7,8 @@ on:
     branches: [ "main", "dev" ]
 
 jobs:
-  test:
-    name: Run Unit Tests (${{ matrix.os }})
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,11 +24,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # Krok 1: Przywracanie zależności dla całego rozwiązania (Aplikacja + Testy)
       - name: Restore Dependencies
-        run: dotnet restore tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj
+        run: dotnet restore FolderSync.sln
 
-      - name: Build
-        run: dotnet build tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release --no-restore
+      # Krok 2: Budowanie całego rozwiązania. 
+      # Gwarantuje to, że główny projekt (FolderSync.csproj) kompiluje się poprawnie na danym OS.
+      - name: Build Solution
+        run: dotnet build FolderSync.sln -c Release --no-restore
 
+      # Krok 3: Uruchomienie testów jednostkowych.
+      # Używamy flagi --no-build, ponieważ projekt został już zbudowany w poprzednim kroku.
       - name: Run Unit Tests
         run: dotnet test tests/FolderSync.UnitTests/FolderSync.UnitTests.csproj -c Release --no-build

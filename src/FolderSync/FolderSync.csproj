@@ -38,6 +38,7 @@
         <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
         <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.0.0" />
         <PackageReference Include="NLog" Version="5.3.4" />
+        <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.3" />
     </ItemGroup>
     
 </Project>
