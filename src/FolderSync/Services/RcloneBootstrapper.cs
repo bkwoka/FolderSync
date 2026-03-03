@@ -103,17 +103,25 @@ public class RcloneBootstrapper(IHttpClientFactory httpClientFactory) : IRcloneB
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
-                    /* Access denied for other users - ignore and proceed */
+                    // Access denied for other users - expected behavior in multi-user environments.
                 }
-                catch
+                catch (InvalidOperationException)
                 {
-                    /* Ignore other exceptions while terminating processes */
+                    // Process has already exited before we could kill it. Safe to ignore.
+                }
+                catch (Exception ex)
+                {
+                    // Log unforeseen termination errors. If subsequent file operations fail (e.g., IOException),
+                    // these logs provide critical diagnostic context (e.g., zombie process detection).
+                    Logger.Warn(ex, "Failed to terminate an existing rclone process (PID: {0}). This may cause file lock issues during update.", p.Id);
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            /* Global exception handler for the termination process */
+            // Encountered an error during process enumeration (e.g., WMI access issues on Windows).
+            // Proceeding with installation, though file locks may still exist.
+            Logger.Warn(ex, "Failed to enumerate running rclone processes. Proceeding with installation risk.");
         }
 
         string extractedExePath = Path.Combine(extractDir, $"rclone-{version}-{platformKey}",

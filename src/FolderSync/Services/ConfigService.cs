@@ -71,11 +71,13 @@ public class ConfigService : IConfigService
         catch (FileNotFoundException)
         {
             // Expected for new installations; return a default empty configuration.
+            Logger.Info("Configuration file not found. Initializing a fresh profile (First Run).");
             return CreateEmptyConfig();
         }
         catch (DirectoryNotFoundException)
         {
             // Expected for new installations; return a default empty configuration.
+            Logger.Info("Application data directory not found. Initializing a fresh profile (First Run).");
             return CreateEmptyConfig();
         }
         catch (JsonException jex)
@@ -124,8 +126,11 @@ public class ConfigService : IConfigService
                 {
                     File.Delete(tempPath);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // Fail-Safe: Log failure to cleanup temporary configuration files.
+                    // Persistent failures may indicate permission issues or I/O locks.
+                    Logger.Warn(ex, "Failed to clean up temporary configuration file: {0}. It may remain on disk.", tempPath);
                 }
             }
 

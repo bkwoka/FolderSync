@@ -72,12 +72,11 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                 {
                     if (!p.HasExited) p.Kill(true);
                 }
-                catch (InvalidOperationException)
-                {
-                }
+                catch (InvalidOperationException) { }
                 catch (Exception ex)
                 {
-                    Logger.Trace(ex, "Ignored error while killing Rclone process.");
+                    // Fail-Visible: Logging failed process cleanup upon cancellation to prevent zombie occurrences.
+                    Logger.Warn(ex, "Failed to kill Rclone process during cancellation token trigger.");
                 }
             }
         }, process);
@@ -147,8 +146,14 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                 {
                     process.Kill(true);
                 }
-                catch
+                catch (InvalidOperationException)
                 {
+                    // Expected if the process completes between the HasExited check and the Kill invocation.
+                }
+                catch (Exception ex)
+                {
+                    // Fail-Visible: Log any failure to terminate the process to prevent orphaned zombie processes.
+                    Logger.Warn(ex, "Failed to forcefully terminate Rclone process. This might result in a zombie process.");
                 }
             }
         }
@@ -196,12 +201,11 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                 {
                     if (!p.HasExited) p.Kill(true);
                 }
-                catch (InvalidOperationException)
-                {
-                }
+                catch (InvalidOperationException) { }
                 catch (Exception ex)
                 {
-                    Logger.Trace(ex, "Ignored error while killing Rclone process.");
+                    // Surface registration cleanup failures for better maintenance.
+                    Logger.Warn(ex, "Failed to kill Rclone authorization process during cancellation.");
                 }
             }
         }, process);
@@ -227,8 +231,11 @@ public partial class RcloneService(IRcloneBootstrapper bootstrapper) : IRcloneSe
                 {
                     process.Kill(true);
                 }
-                catch
+                catch (InvalidOperationException) { }
+                catch (Exception ex)
                 {
+                    // Maintain visibility into cleanup failures for long-running authorization processes.
+                    Logger.Warn(ex, "Failed to forcefully terminate Rclone authorization process. This might result in a zombie process.");
                 }
             }
         }

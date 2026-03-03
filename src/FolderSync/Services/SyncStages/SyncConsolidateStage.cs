@@ -78,35 +78,48 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
                         var deepId = Guid.NewGuid();
                         uiLogger.Report(new SyncProgressEvent(deepId, $"    {string.Format(localizer["Log_Stage1_DeepInspect"], remote.FriendlyName, file.Name)}", false));
                         
-                        string? orphanTime = await ExtractCreateTimeAsync(remote.RcloneRemote, dir.Id, file.Name, cancellationToken);
-                        string? targetTime = await ExtractCreateTimeAsync(remote.RcloneRemote, targetId, existingFile.Name, cancellationToken);
-                        
-                        bool isSameIdentity = orphanTime is not null && orphanTime == targetTime;
-
-                        if (isSameIdentity)
+                        try
                         {
-                            if (file.ModTime > existingFile.ModTime.AddSeconds(2))
+                            string? orphanTime = await ExtractCreateTimeAsync(remote.RcloneRemote, dir.Id, file.Name, cancellationToken);
+                            string? targetTime = await ExtractCreateTimeAsync(remote.RcloneRemote, targetId, existingFile.Name, cancellationToken);
+                            
+                            bool isSameIdentity = orphanTime is not null && orphanTime == targetTime;
+
+                            if (isSameIdentity)
                             {
-                                Logger.Info("Identity match: Orphan version is newer. Overwriting main folder version.");
-                                await rclone.ExecuteCommandAsync(new[] { "deletefile", $"{destPath}{existingFile.Name}", "--drive-use-trash=false" }, null, cancellationToken);
-                                existingFilesDict[file.Name] = file;
+                                if (file.ModTime > existingFile.ModTime.AddSeconds(2))
+                                {
+                                    Logger.Info("Identity match: Orphan version is newer. Overwriting main folder version.");
+                                    await rclone.ExecuteCommandAsync(new[] { "deletefile", $"{destPath}{existingFile.Name}", "--drive-use-trash=false" }, null, cancellationToken);
+                                    existingFilesDict[file.Name] = file;
+                                }
+                                else
+                                {
+                                    Logger.Info("Identity match: Orphan version is older or identical. Skipping (will be purged).");
+                                    shouldMove = false; 
+                                }
                             }
                             else
                             {
-                                Logger.Info("Identity match: Orphan version is older or identical. Skipping (will be purged).");
-                                shouldMove = false; 
+                                Logger.Warn("Identity mismatch for same-name file '{FileName}'. Renaming to avoid data loss.", file.Name);
+                                string ext = Path.GetExtension(file.Name); 
+                                string nameNoExt = Path.GetFileNameWithoutExtension(file.Name);
+                                finalName = $"{nameNoExt}_{file.ModTime:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N")[..4]}{ext}";
+                                existingFilesDict[finalName] = file;
                             }
                         }
-                        else
+                        catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            Logger.Warn("Identity mismatch for same-name file '{FileName}'. Renaming to avoid data loss.", file.Name);
-                            string ext = Path.GetExtension(file.Name); 
-                            string nameNoExt = Path.GetFileNameWithoutExtension(file.Name);
-                            finalName = $"{nameNoExt}_{file.ModTime:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N")[..4]}{ext}";
-                            existingFilesDict[finalName] = file;
+                            // Infrastructure resilience: If a network error occurs during identity inspection,
+                            // we skip the file to prevent an incorrect 'identity mismatch' decision.
+                            // The file remains in the orphan directory and will be processed during the next sync cycle.
+                            Logger.Error(ex, "Infrastructure error during deep inspection of '{0}'. Skipping this file to prevent false duplication.", file.Name);
+                            shouldMove = false; 
                         }
-                        
-                        uiLogger.Report(new SyncProgressEvent(deepId, "", true));
+                        finally
+                        {
+                            uiLogger.Report(new SyncProgressEvent(deepId, "", true));
+                        }
                     }
                     else
                     {
@@ -150,11 +163,14 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
     /// </summary>
     private async Task<string?> ExtractCreateTimeAsync(string remoteName, string folderId, string fileName, CancellationToken cancellationToken)
     {
+        // Fail-Fast for infrastructure: We do not catch I/O or network exceptions here (e.g., Rclone timeouts).
+        // These errors must propagate to the caller to prevent 'Identity Mismatch' false positives
+        // during consolidation.
+        string jsonContent = await rclone.ReadFileContentAsync(remoteName, folderId, fileName, cancellationToken);
+        if (string.IsNullOrWhiteSpace(jsonContent)) return null;
+        
         try
         {
-            string jsonContent = await rclone.ReadFileContentAsync(remoteName, folderId, fileName, cancellationToken);
-            if (string.IsNullOrWhiteSpace(jsonContent)) return null;
-            
             using var doc = JsonDocument.Parse(jsonContent);
             if (doc.RootElement.TryGetProperty("chunkedPrompt", out var chunkedPrompt) && 
                 chunkedPrompt.TryGetProperty("chunks", out var chunks) && 
@@ -169,10 +185,10 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
                 }
             }
         }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) 
+        catch (JsonException ex) 
         { 
-            Logger.Warn(ex, "Failed to extract createTime for {FileName}.", fileName); 
+            // Fallback to null is acceptable if the file was downloaded but the content is corrupted.
+            Logger.Warn(ex, "Failed to parse JSON for {FileName}. Treating as unknown identity.", fileName); 
         }
         return null;
     }

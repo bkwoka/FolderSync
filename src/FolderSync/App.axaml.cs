@@ -19,6 +19,7 @@ using System.Threading.Tasks;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
 using System.Text.RegularExpressions;
+using NLog;
 
 namespace FolderSync;
 
@@ -27,6 +28,8 @@ namespace FolderSync;
 /// </summary>
 public partial class App : Application
 {
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
     /// <summary>
     /// Global access to the service provider.
     /// </summary>
@@ -97,9 +100,11 @@ public partial class App : Application
                                     return true; // Quota reset required - trigger retry.
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // In case of I/O failure while reading the body, do not attempt a retry.
+                                // Fail-Safe for I/O: Log failure to inspect the 403 response content.
+                                // If the stream is unreadable, we abort retry attempts to prevent persistent hangs.
+                                Logger.Warn(ex, "I/O failure while reading the 403 Forbidden response body. Aborting retry.");
                                 return false;
                             }
 
@@ -191,8 +196,11 @@ public partial class App : Application
 
             TranslationService.Instance.Culture = new System.Globalization.CultureInfo(lang);
         }
-        catch
+        catch (Exception ex)
         {
+            // Resilience: Log catastrophic failures during pre-boot configuration loading.
+            // Reverting to default English culture to ensure the UI remains functional.
+            Logger.Warn(ex, "Failed to preload language configuration. Falling back to English.");
             TranslationService.Instance.Culture = new System.Globalization.CultureInfo("en");
         }
     }

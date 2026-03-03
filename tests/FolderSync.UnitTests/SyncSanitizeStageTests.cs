@@ -172,7 +172,7 @@ public class SyncSanitizeStageTests
     // ─── Resilience & Cancellation ──────────────────────────────────────────────
 
     [Fact]
-    public async Task RunAsync_WhenMovetoThrowsForOneDuplicate_ShouldNotAbortEntireStage()
+    public async Task RunAsync_WhenMovetoThrowsForOneDuplicate_ShouldFailFastToPreventCorruption()
     {
         // Arrange
         var baseTime = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
@@ -191,7 +191,7 @@ public class SyncSanitizeStageTests
 
         // Act & Assert
         await _sut.Awaiting(x => x.RunAsync(_remote, new Progress<FolderSync.Helpers.SyncProgressEvent>(), CancellationToken.None))
-            .Should().NotThrowAsync("a single file operation failure should not stop the entire sanitization cycle");
+            .Should().ThrowAsync<InvalidOperationException>("sanitization failures must halt the process to maintain data integrity");
     }
 
     [Fact]

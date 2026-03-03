@@ -169,8 +169,21 @@ public class DeleteOrchestratorService(IRcloneService rclone, IGoogleDriveApiSer
                     }
                 }
 
-                if (!trashed) Logger.Warn("Could not move attachment {0} to trash. It might already be deleted or inaccessible.", id);
+                if (!trashed)
+                {
+                    Logger.Warn("Could not move attachment {0} to trash. It might already be deleted or inaccessible.", id);
+                    
+                    // Register a virtual failure for attachments to notify the user via UI status updates.
+                    failedRemotes.Add("Attachments / Załączniki"); 
+                }
             }
+        }
+
+        // Final verification: Determine if any part of the deletion process (conversations or attachments) failed.
+        if (!failedRemotes.IsEmpty)
+        {
+            var uniqueFailures = failedRemotes.Distinct().ToList();
+            throw new PartialDeletionException(uniqueFailures);
         }
 
         Logger.Info("Global Delete procedure completed successfully for '{FileName}'.", fileName);
