@@ -6,6 +6,7 @@ using FolderSync.Models;
 using FolderSync.Services;
 using FolderSync.Services.Interfaces;
 using FolderSync.Services.SyncStages;
+using FolderSync.ViewModels.Settings;
 
 namespace FolderSync.ViewModels;
 
@@ -32,7 +33,7 @@ public static class DesignTimeViewModels
         var localizer = TranslationService.Instance;
 
         var dummySanitize = new SyncSanitizeStage(dummyRclone, localizer);
-        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, dummyGoogleApi, localizer);
+        var dummyConsolidate = new SyncConsolidateStage(dummyRclone, dummyGoogleApi, localizer, new PromptMetadataParser());
         var dummyCrossAccount = new SyncCrossAccountStage(dummyRclone, localizer);
         var dummySync = new SyncEngine(dummySanitize, dummyConsolidate, dummyCrossAccount, localizer);
 
@@ -56,50 +57,49 @@ public static class DesignTimeViewModels
         };
 
         // Mock data
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Sanitization and Consolidation", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Sanitizing conversation names", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_2: Sanitizing conversation names", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Fixing name duplicates (2)", false));
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "    G_Drive_1: Consolidation", false));
-        SyncViewModel.AddLog(
-            new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "    G_Drive_2: Consolidation", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Moving contents of redundant folder 1A2B3C", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    G_Drive_1: Deep analysis of 'Important project.prompt'", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "\nUpdating conversations across accounts\n", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "  ⇄ Aggregation: Checking for newer conversations on secondary drives", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    ⬇ Downloading 3 newer conversations from G_Drive_2", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "\n  ⇄ Distribution: Broadcasting updated conversations to other drives", false));
-        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(),
-            "    ⬆ Uploading 5 newest conversations to G_Drive_1", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Sanitization and Consolidation", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Sanitizing conversation names", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_2: Sanitizing conversation names", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Fixing name duplicates (2)", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Consolidation", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_2: Consolidation", false, LogEntryType.Normal, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Moving contents of redundant folder 1A2B3C", false, LogEntryType.System, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "G_Drive_1: Deep analysis of 'Important project.prompt'", false, LogEntryType.Inspect, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "\nUpdating conversations across accounts\n", false));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Aggregation: Checking for newer conversations on secondary drives", false, LogEntryType.Network));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Downloading 3 newer conversations from G_Drive_2", false, LogEntryType.Download, 1));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "\nDistribution: Broadcasting updated conversations to other drives", false, LogEntryType.Network));
+        SyncViewModel.AddLog(new FolderSync.Helpers.SyncProgressEvent(Guid.NewGuid(), "Uploading 5 newest conversations to G_Drive_1", false, LogEntryType.Upload, 1));
 
         // =========================================================
         // 2. MOCK: SETTINGS VIEW (SettingsView)
         // =========================================================
-        SettingsViewModel = new SettingsViewModel(dummyConfig, localizer, dummyBootstrapper, dummyFilePicker,
-            dummyUpdate, dummyDriveOrchestrator, dummyProfileOrchestrator)
+        var dummyDriveMgmt = new DriveManagementViewModel(dummyDriveOrchestrator, dummyProfileOrchestrator, dummyBootstrapper, localizer)
         {
-            StatusMessage = "Ready to work",
-            CurrentMasterName = "Master_BK (remote_master)",
-            OauthCountdownText = "Waiting for browser... 04:23",
-
+            CurrentMasterName = "Master_BK (remote_master)"
+        };
+        
+        var dummyOAuth = new OAuthFlowViewModel(dummyDriveOrchestrator, dummyConfig, localizer)
+        {
+            OauthCountdownText = "Waiting for browser... 04:23"
+        };
+        
+        var dummyBackup = new ProfileBackupViewModel(dummyProfileOrchestrator, dummyFilePicker, localizer);
+        
+        var dummyPrefs = new PreferencesViewModel(dummyConfig, dummyUpdate, localizer)
+        {
             IsUpdateAvailable = true,
             UpdateMessage = "🌟 New version available (v1.1.0)! Network stability improved.",
             AppVersionDisplay = "1.0.0",
         };
 
-        if (SettingsViewModel.AvailableLanguages.Count > 1)
-            SettingsViewModel.SelectedLanguage = SettingsViewModel.AvailableLanguages[1];
+        if (dummyPrefs.AvailableLanguages.Count > 1)
+            dummyPrefs.SelectedLanguage = dummyPrefs.AvailableLanguages[1];
+
+        SettingsViewModel = new SettingsViewModel(dummyDriveMgmt, dummyOAuth, dummyBackup, dummyPrefs, localizer)
+        {
+            StatusMessage = "Ready to work"
+        };
 
         var masterDrive =
             new RemoteInfo("Master_BK", "remote_master", "195h96kTLGZBL4-eE02REf4kqow4fn2u6", "master@domain.com")
@@ -111,14 +111,17 @@ public static class DesignTimeViewModels
             new RemoteInfo("Konto Firmowe", "remote_work", "399x11kPLGZAL4-yY09REf4kqow4fn1v8", "work@company.com")
                 { IsMaster = false };
 
-        SettingsViewModel.SavedRemotes.Add(masterDrive);
-        SettingsViewModel.SavedRemotes.Add(slaveDrive1);
-        SettingsViewModel.SavedRemotes.Add(slaveDrive2);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(masterDrive);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(slaveDrive1);
+        SettingsViewModel.DriveManagement.SavedRemotes.Add(slaveDrive2);
 
         // =========================================================
         // 3. MOCK: BROWSER VIEW (BrowserView)
         // =========================================================
-        BrowserViewModel = new BrowserViewModel(dummyRclone, dummyConfig, dummyRename, dummyDelete, localizer)
+        var dummyRenameDialog = new FolderSync.ViewModels.Dialogs.RenameDialogViewModel(dummyRename, dummyConfig, localizer);
+        var dummyDeleteDialog = new FolderSync.ViewModels.Dialogs.DeleteDialogViewModel(dummyDelete, dummyConfig, localizer);
+
+        BrowserViewModel = new BrowserViewModel(dummyRclone, dummyConfig, dummyRenameDialog, dummyDeleteDialog, localizer)
         {
             StatusMessage = "Displaying 4 results (28 files total).",
             CurrentDriveInfo = "Master_BK (master@domain.com)",

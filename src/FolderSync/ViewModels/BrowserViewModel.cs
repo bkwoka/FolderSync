@@ -8,27 +8,27 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
-using FolderSync.Exceptions;
 using FolderSync.Messages;
 using FolderSync.Models;
-using FolderSync.Services;
 using FolderSync.Services.Interfaces;
+using FolderSync.ViewModels.Dialogs;
 using NLog;
 
 namespace FolderSync.ViewModels;
 
 /// <summary>
-/// ViewModel for the File Browser view, allowing users to browse, rename, and delete conversation files
-/// across multiple configured Google Drive remotes.
+/// ViewModel for the File Browser view, allowing users to browse conversation files
+/// across multiple configured Google Drive remotes. Delegates complex dialog flows to sub-ViewModels.
 /// </summary>
 public partial class BrowserViewModel : ViewModelBase
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
     private readonly IRcloneService _rcloneService;
     private readonly IConfigService _configService;
-    private readonly IRenameOrchestratorService _renameService;
-    private readonly IDeleteOrchestratorService _deleteService;
     private readonly ITranslationService _localizer;
+
+    public RenameDialogViewModel RenameDialog { get; }
+    public DeleteDialogViewModel DeleteDialog { get; }
 
     [ObservableProperty] private ObservableCollection<RcloneItem> _files = new();
     private List<RcloneItem> _allFetchedFiles = new();
@@ -39,55 +39,41 @@ public partial class BrowserViewModel : ViewModelBase
 
     [ObservableProperty] private bool _canModify;
 
-    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
+    [ObservableProperty] 
+    [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
     private bool _isLoading;
 
     [ObservableProperty] private string _statusMessage;
     [ObservableProperty] private string _currentDriveInfo;
     [ObservableProperty] private bool _showOnlyConversations = true;
 
-    [ObservableProperty] private bool _isWarningModalVisible;
-    [ObservableProperty] private bool _isInputModalVisible;
-    [ObservableProperty] private string _newFileName = string.Empty;
-    [ObservableProperty] private bool _skipWarningCheckbox;
-    [ObservableProperty] private bool _isRenaming;
-
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasRenameError))]
-    private string _renameErrorMessage = string.Empty;
-
-    public bool HasRenameError => !string.IsNullOrEmpty(RenameErrorMessage);
-
-    [ObservableProperty] private bool _isDeleteModalVisible;
-    [ObservableProperty] private bool _isDeleting;
-    [ObservableProperty] private bool _deleteAttachmentsToggle;
-    [ObservableProperty] private bool _showDeleteSyncWarning;
-    [ObservableProperty] private bool _skipDeleteWarningCheckbox;
-    [ObservableProperty] private string _deleteTargetName = string.Empty;
-
-    private RcloneItem? _fileToProcess;
-
     private string? _lastViewedFolderId;
 
     // File loading timeout control
     private CancellationTokenSource? _refreshCts;
 
-    public BrowserViewModel(IRcloneService rcloneService, IConfigService configService,
-        IRenameOrchestratorService renameService, IDeleteOrchestratorService deleteService,
+    public BrowserViewModel(
+        IRcloneService rcloneService, 
+        IConfigService configService,
+        RenameDialogViewModel renameDialog,
+        DeleteDialogViewModel deleteDialog,
         ITranslationService localizer)
     {
         _rcloneService = rcloneService;
         _configService = configService;
-        _renameService = renameService;
-        _deleteService = deleteService;
+        RenameDialog = renameDialog;
+        DeleteDialog = deleteDialog;
         _localizer = localizer;
 
         _statusMessage = _localizer["Status_LoadingInfo"];
         _currentDriveInfo = _localizer["Status_Checking"];
 
+        WireUpDialogEvents();
+
         // Refresh UI state and filter when language changes
         WeakReferenceMessenger.Default.Register<LanguageChangedMessage>(this, (r, m) =>
         {
-            if (!IsLoading && !IsRenaming && !IsDeleting)
+            if (!IsLoading && !RenameDialog.IsRenaming && !DeleteDialog.IsDeleting)
             {
                 if (!string.IsNullOrEmpty(_lastViewedFolderId)) ApplyFilter();
                 else
@@ -97,6 +83,54 @@ public partial class BrowserViewModel : ViewModelBase
                 }
             }
         });
+    }
+
+    private void WireUpDialogEvents()
+    {
+        RenameDialog.OnStatusMessage += msg => StatusMessage = msg;
+        DeleteDialog.OnStatusMessage += msg => StatusMessage = msg;
+
+        RenameDialog.OnRenameSuccess += updatedItem =>
+        {
+            UpdateItemInCollections(updatedItem);
+            StatusMessage = _localizer["Success_NameUpdated"];
+        };
+
+        RenameDialog.OnPartialRename += (updatedItem, failedRemotes) =>
+        {
+            UpdateItemInCollections(updatedItem);
+            StatusMessage = string.Format(_localizer["Error_PartialRename"], string.Join(", ", failedRemotes));
+            Logger.Warn("Partial rename occurred. Desynchronization on: {0}", string.Join(", ", failedRemotes));
+        };
+
+        DeleteDialog.OnDeleteSuccess += deletedItem =>
+        {
+            _allFetchedFiles.Remove(deletedItem);
+            Files.Remove(deletedItem);
+            StatusMessage = _localizer["Success_ConversationDeleted"];
+        };
+
+        DeleteDialog.OnPartialDelete += (deletedItem, failedRemotes) =>
+        {
+            StatusMessage = string.Format(_localizer["Error_PartialDelete"], string.Join(", ", failedRemotes));
+            Logger.Warn("Partial deletion occurred. Leftovers on: {0}", string.Join(", ", failedRemotes));
+            
+            // If the currently viewed remote was successful, remove it from the list anyway to reflect local state
+            if (SelectedRemote != null && !failedRemotes.Contains(SelectedRemote.FriendlyName))
+            {
+                _allFetchedFiles.Remove(deletedItem);
+                Files.Remove(deletedItem);
+            }
+        };
+    }
+
+    private void UpdateItemInCollections(RcloneItem updatedItem)
+    {
+        int allIdx = _allFetchedFiles.FindIndex(f => f.Id == updatedItem.Id);
+        if (allIdx >= 0) _allFetchedFiles[allIdx] = updatedItem;
+
+        int filesIdx = Files.ToList().FindIndex(f => f.Id == updatedItem.Id);
+        if (filesIdx >= 0) Files[filesIdx] = updatedItem;
     }
 
     private bool CanRefresh() => !IsLoading && !IsAppLocked;
@@ -248,248 +282,14 @@ public partial class BrowserViewModel : ViewModelBase
     private async Task StartDelete(RcloneItem item)
     {
         if (!CanModify) return;
-
-        // UI Lockdown: Prevent any background process interference while the delete modal is active.
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
-
-        _fileToProcess = item;
-        DeleteTargetName = item.Name;
-        DeleteAttachmentsToggle = false;
-        IsDeleting = false;
-
-        var config = await _configService.LoadConfigAsync();
-        ShowDeleteSyncWarning = !config.SkipDeleteSyncWarning;
-        SkipDeleteWarningCheckbox = config.SkipDeleteSyncWarning;
-        IsDeleteModalVisible = true;
-    }
-
-    [RelayCommand]
-    private void CancelDelete()
-    {
-        IsDeleteModalVisible = false;
-        _fileToProcess = null;
-        // Restore UI availability after the cancellation of the deletion process.
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
-    }
-
-    /// <summary>
-    /// Orchestrates global deletion of a file across the mesh.
-    /// Incorporates a 2-minute timeout to protect UI thread from hanging I/O.
-    /// </summary>
-    [RelayCommand]
-    private async Task ConfirmDelete()
-    {
-        if (_fileToProcess == null || !CanModify)
-        {
-            // Failsafe UI release if state is inconsistent.
-            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
-            return;
-        }
-
-        IsDeleting = true;
-        StatusMessage = _localizer["Status_DeletingMesh"];
-
-        // GUARD: Prevent indefinite UI lock by imposing a 2-minute hard timeout on Google API requests
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-
-        try
-        {
-            var config = await _configService.LoadConfigAsync();
-            if (config.SkipDeleteSyncWarning != SkipDeleteWarningCheckbox)
-            {
-                config.SkipDeleteSyncWarning = SkipDeleteWarningCheckbox;
-                await _configService.SaveConfigAsync(config);
-            }
-
-            var master = config.Remotes.FirstOrDefault(r => r.FolderId == config.MasterRemoteId);
-            if (master != null)
-            {
-                await _deleteService.DeleteConversationAsync(_fileToProcess.Name, DeleteAttachmentsToggle, master,
-                    config.Remotes, timeoutCts.Token);
-
-                _allFetchedFiles.Remove(_fileToProcess);
-                Files.Remove(_fileToProcess);
-                StatusMessage = _localizer["Success_ConversationDeleted"];
-                IsDeleteModalVisible = false;
-            }
-        }
-        catch (PartialDeletionException partialEx)
-        {
-            // Handle partial success: inform the user which remotes failed
-            StatusMessage = string.Format(_localizer["Error_PartialDelete"], string.Join(", ", partialEx.FailedRemotes));
-            Logger.Warn("Partial deletion occurred. Leftovers on: {0}", string.Join(", ", partialEx.FailedRemotes));
-            
-            // If the currently viewed remote was successful, remove it from the list anyway to reflect local state
-            if (_fileToProcess != null && SelectedRemote != null && !partialEx.FailedRemotes.Contains(SelectedRemote.FriendlyName))
-            {
-                _allFetchedFiles.Remove(_fileToProcess);
-                Files.Remove(_fileToProcess);
-            }
-            
-            IsDeleteModalVisible = false;
-        }
-        catch (OperationCanceledException)
-        {
-            // Localization via .resx
-            StatusMessage = _localizer["Error_OperationTimeout"];
-            Logger.Error("Delete operation timed out after 2 minutes.");
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = _localizer["Error_DeleteFailed"];
-            Logger.Error(ex, "Delete operation failed.");
-        }
-        finally
-        {
-            _fileToProcess = null;
-            IsDeleting = false;
-            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
-        }
+        await DeleteDialog.StartAsync(item);
     }
 
     [RelayCommand]
     private async Task StartRename(RcloneItem item)
     {
         if (!CanModify) return;
-
-        // Secure UI State: Lock interface to ensure atomic rename operation lifecycle.
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(true));
-
-        _fileToProcess = item;
-        NewFileName = Path.GetFileNameWithoutExtension(item.Name);
-        RenameErrorMessage = string.Empty;
-        IsRenaming = false;
-
-        var config = await _configService.LoadConfigAsync();
-        SkipWarningCheckbox = config.SkipRenameSyncWarning;
-
-        if (config.SkipRenameSyncWarning) IsInputModalVisible = true;
-        else IsWarningModalVisible = true;
-    }
-
-    [RelayCommand]
-    private void CancelRename()
-    {
-        IsWarningModalVisible = false;
-        IsInputModalVisible = false;
-        _fileToProcess = null;
-        RenameErrorMessage = string.Empty;
-        IsRenaming = false;
-        // Release global UI lock after renaming exit.
-        WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
-    }
-
-    [RelayCommand]
-    private async Task ContinueToInput()
-    {
-        IsWarningModalVisible = false;
-        var config = await _configService.LoadConfigAsync();
-        if (config.SkipRenameSyncWarning != SkipWarningCheckbox)
-        {
-            config.SkipRenameSyncWarning = SkipWarningCheckbox;
-            await _configService.SaveConfigAsync(config);
-        }
-
-        RenameErrorMessage = string.Empty;
-        IsInputModalVisible = true;
-    }
-
-    /// <summary>
-    /// Orchestrates global renaming of a file across the mesh.
-    /// </summary>
-    [RelayCommand]
-    private async Task ConfirmRename()
-    {
-        if (_fileToProcess == null || string.IsNullOrWhiteSpace(NewFileName) || !CanModify) return;
-
-        RenameErrorMessage = string.Empty;
-        string trimmedName = NewFileName.Trim();
-
-        // Length validation against system constants.
-        if (trimmedName.Length > AppConstants.MaxFileNameLength)
-        {
-            RenameErrorMessage = _localizer["Error_NameTooLong"];
-            return;
-        }
-
-        string ext = Path.GetExtension(_fileToProcess.Name);
-        string newFullName = $"{trimmedName}{ext}";
-
-        if (_fileToProcess.Name == newFullName)
-        {
-            CancelRename(); // Centralized exit handles UI unlocking.
-            return;
-        }
-
-        if (_allFetchedFiles.Any(f => f.Name.Equals(newFullName, StringComparison.OrdinalIgnoreCase)))
-        {
-            RenameErrorMessage = _localizer["Error_NameExists"];
-            return;
-        }
-
-        IsRenaming = true;
-
-        // Added timeout to rename operation
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-
-        try
-        {
-            var config = await _configService.LoadConfigAsync();
-            var master = config.Remotes.FirstOrDefault(r => r.FolderId == config.MasterRemoteId);
-
-            if (master != null)
-            {
-                // Propagate security token to prevent UI hanging during background operations.
-                await _renameService.RenameConversationAsync(_fileToProcess.Name, newFullName, master, config.Remotes,
-                    timeoutCts.Token);
-
-                var updatedItem = _fileToProcess with { Name = newFullName, ModTime = DateTime.UtcNow };
-                int allIdx = _allFetchedFiles.IndexOf(_fileToProcess);
-                if (allIdx >= 0) _allFetchedFiles[allIdx] = updatedItem;
-
-                int filesIdx = Files.IndexOf(_fileToProcess);
-                if (filesIdx >= 0) Files[filesIdx] = updatedItem;
-
-                StatusMessage = _localizer["Success_NameUpdated"];
-                IsInputModalVisible = false;
-            }
-        }
-        catch (PartialRenameException partialEx)
-        {
-            // Update the UI state since the rename succeeded on the Master drive, 
-            // even if some slave remotes failed and might cause duplicates later.
-            var updatedItem = _fileToProcess with { Name = newFullName, ModTime = DateTime.UtcNow };
-            int allIdx = _allFetchedFiles.IndexOf(_fileToProcess);
-            if (allIdx >= 0) _allFetchedFiles[allIdx] = updatedItem;
-
-            int filesIdx = Files.IndexOf(_fileToProcess);
-            if (filesIdx >= 0) Files[filesIdx] = updatedItem;
-
-            // Warn the user about the impending duplicate after next sync
-            StatusMessage = string.Format(_localizer["Error_PartialRename"], string.Join(", ", partialEx.FailedRemotes));
-            Logger.Warn("Partial rename occurred. Desynchronization on: {0}", string.Join(", ", partialEx.FailedRemotes));
-            IsInputModalVisible = false;
-        }
-        catch (OperationCanceledException)
-        {
-            // Timeout response
-            RenameErrorMessage = _localizer["Error_OperationTimeout"];
-            Logger.Error("Rename operation timed out after 2 minutes.");
-        }
-        catch (InvalidOperationException invEx)
-        {
-            RenameErrorMessage = invEx.Message;
-        }
-        catch (Exception ex)
-        {
-            RenameErrorMessage = _localizer["Error_ServerCommunication"];
-            Logger.Error(ex, "Rename operation failed.");
-        }
-        finally
-        {
-            _fileToProcess = null;
-            IsRenaming = false;
-            WeakReferenceMessenger.Default.Send(new SyncStateChangedMessage(false));
-        }
+        var existingNames = _allFetchedFiles.Select(f => f.Name);
+        await RenameDialog.StartAsync(item, existingNames);
     }
 }

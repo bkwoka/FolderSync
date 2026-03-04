@@ -28,7 +28,8 @@ public class DeleteOrchestratorServiceTests
     {
         _mockRclone = new Mock<IRcloneService>();
         _mockGoogleApi = new Mock<IGoogleDriveApiService>();
-        _sut = new DeleteOrchestratorService(_mockRclone.Object, _mockGoogleApi.Object);
+        // Injecting real parser to maintain test coverage of the parsing logic without rewriting tests
+        _sut = new DeleteOrchestratorService(_mockRclone.Object, _mockGoogleApi.Object, new PromptMetadataParser());
         
         _masterRemote = new RemoteInfo("Master", "gdrive_master", "master_id");
         _allRemotes = new List<RemoteInfo>

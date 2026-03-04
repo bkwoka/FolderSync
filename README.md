@@ -74,9 +74,11 @@ Stage2_CrossAccount --> [*] : Full Synchronization Complete
 
 ## Security & Privacy
 
-This tool respects your data:
+This tool respects your data and employs enterprise-grade security patterns:
 * **Local Only:** There are no telemetry, tracking, or middle-man servers. Communication happens directly between your machine and Google APIs.
-* **Token Isolation:** OAuth tokens are kept strictly local and can be encrypted using PBKDF2 (600k iterations) if exported.
+* **At-Rest Encryption:** OAuth tokens are never stored in plaintext on your disk. They are encrypted using AES-GCM with an OS-native, machine-bound key (DPAPI on Windows, machine-bound HKDF on Linux / Keychain on macOS). 
+  > *Security Note:* This "Soft Protection" prevents token theft via simple file copying or basic info-stealers. However, it cannot protect against an attacker who has gained full root/administrator access to your currently running system.
+* **Secure Backups:** Exported profiles (`.fsbak`) are securely encrypted using AES-GCM and PBKDF2 (600k iterations) with your custom password, allowing safe transfer between machines.
 * **Atomic Operations:** Configuration changes use atomic file operations (`.tmp` file swapping) to prevent corruption during unexpected shutdowns or power losses.
 
 ## Technology Stack

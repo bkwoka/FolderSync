@@ -5,6 +5,7 @@ using Avalonia.Data.Core.Plugins;
 using System.Linq;
 using Avalonia.Markup.Xaml;
 using FolderSync.ViewModels;
+using FolderSync.ViewModels.Settings;
 using FolderSync.Views;
 using System;
 using System.IO;
@@ -119,7 +120,20 @@ public partial class App : Application
             });
 
         // Infrastructure Services
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<ISecretVault, WindowsSecretVault>();
+        }
+        else
+        {
+            services.AddSingleton<ISecretVault, UnixMachineBoundVault>();
+        }
+
+        services.AddSingleton<ITokenCryptoService, TokenCryptoService>();
+        
         services.AddSingleton<IRcloneBootstrapper, RcloneBootstrapper>();
+        services.AddSingleton<IRcloneConfigManager, RcloneConfigManager>();
+        services.AddSingleton<IRcloneProcessRunner, RcloneProcessRunner>();
         services.AddSingleton<IRcloneService, RcloneService>();
         services.AddSingleton<IGoogleDriveApiService, GoogleDriveApiService>();
         services.AddSingleton<IMeshPermissionService, MeshPermissionService>();
@@ -128,6 +142,7 @@ public partial class App : Application
         services.AddSingleton<IUpdateService, UpdateService>();
         services.AddSingleton<IConfigService, ConfigService>();
         services.AddSingleton<ITranslationService>(TranslationService.Instance);
+        services.AddSingleton<IPromptMetadataParser, PromptMetadataParser>();
 
         // Orchestrators and Business Logic
         services.AddSingleton<IRenameOrchestratorService, RenameOrchestratorService>();
@@ -143,15 +158,33 @@ public partial class App : Application
 
         // ViewModels - Registered as singletons to prevent memory leaks with Messenger subscriptions
         services.AddSingleton<SyncViewModel>();
-        services.AddSingleton<SettingsViewModel>();
+        
+        // Browser Sub-ViewModels
+        services.AddSingleton<FolderSync.ViewModels.Dialogs.RenameDialogViewModel>();
+        services.AddSingleton<FolderSync.ViewModels.Dialogs.DeleteDialogViewModel>();
         services.AddSingleton<BrowserViewModel>();
+        
         services.AddSingleton<MainWindowViewModel>();
+
+        // Settings Sub-ViewModels
+        services.AddSingleton<DriveManagementViewModel>();
+        services.AddSingleton<OAuthFlowViewModel>();
+        services.AddSingleton<ProfileBackupViewModel>();
+        services.AddSingleton<PreferencesViewModel>();
+        services.AddSingleton<SettingsViewModel>();
 
         Services = services.BuildServiceProvider();
 
         // Initialize translation instance via DI
         var translationService = Services.GetRequiredService<ITranslationService>();
         TranslationService.SetInstance(translationService);
+
+        // CRASH RESILIENCE: Clean up any orphaned temporary config files from previous abnormal terminations
+        var configManager = Services.GetRequiredService<IRcloneConfigManager>();
+        configManager.CleanupStaleTempConfigs();
+        
+        // MIGRATION: Ensure all legacy plaintext tokens are encrypted before the application starts
+        Task.Run(() => configManager.MigratePlaintextTokensAsync()).Wait();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

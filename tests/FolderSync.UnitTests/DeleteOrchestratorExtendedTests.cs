@@ -50,7 +50,7 @@ public class DeleteOrchestratorExtendedTests
     {
         _mockRclone    = new Mock<IRcloneService>();
         _mockGoogleApi = new Mock<IGoogleDriveApiService>();
-        _sut           = new DeleteOrchestratorService(_mockRclone.Object, _mockGoogleApi.Object);
+        _sut           = new DeleteOrchestratorService(_mockRclone.Object, _mockGoogleApi.Object, new PromptMetadataParser());
 
         _master    = new RemoteInfo("Master",  "rm",  "fm", "master@e.com");
         _slave1    = new RemoteInfo("Slave1",  "rs1", "fs1", "s1@e.com");

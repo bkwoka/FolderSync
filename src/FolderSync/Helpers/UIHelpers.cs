@@ -4,13 +4,14 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using FolderSync.Models;
 
 namespace FolderSync.Helpers;
 
 /// <summary>
 /// Represents a progress event emitted by the sync engine to update the user interface.
 /// </summary>
-public record SyncProgressEvent(Guid TaskId, string Message, bool IsFinished);
+public record SyncProgressEvent(Guid TaskId, string Message, bool IsFinished, LogEntryType Type = LogEntryType.Normal, int IndentLevel = 0);
 
 /// <summary>
 /// Represents a single log entry in the synchronization task list, supporting live UI updates.
@@ -18,18 +19,20 @@ public record SyncProgressEvent(Guid TaskId, string Message, bool IsFinished);
 public partial class LogEntry : ObservableObject
 {
     public Guid Id { get; init; } = Guid.NewGuid();
-    
+
     /// <summary>
     /// Gets or sets a value indicating whether the task associated with this log entry is currently active (e.g., for showing a spinner).
     /// </summary>
     [ObservableProperty] private bool _isActive;
-    
+
     public string Text { get; init; } = string.Empty;
-    public string? IconPath { get; init; }
-    public string IconColor { get; init; } = "#e4eaec";
-    public double LeftMargin { get; init; }
-    public bool HasIcon => !string.IsNullOrEmpty(IconPath);
-    public Thickness Margin => new Thickness(LeftMargin, 2, 0, 2);
+    public LogEntryType Type { get; init; } = LogEntryType.Normal;
+    public int IndentLevel { get; init; } = 0;
+
+    /// <summary>
+    /// Calculates the dynamic left margin based on the semantic indentation level (24px per level).
+    /// </summary>
+    public Thickness Margin => new Thickness(IndentLevel * 24, 2, 0, 2);
 }
 
 /// <summary>

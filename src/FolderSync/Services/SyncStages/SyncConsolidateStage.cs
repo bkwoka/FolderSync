@@ -3,7 +3,6 @@ using FolderSync.Helpers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FolderSync.Models;
@@ -13,13 +12,14 @@ using NLog;
 namespace FolderSync.Services.SyncStages;
 
 /// <summary>
-/// Synchronization stage that consolidates files from orphaned or duplicate 'AIStudio_bak' folders 
+/// Synchronization stage that consolidates files from orphaned or duplicate 'AIStudio_bak' folders
 /// back into the main target folder on the same drive.
 /// </summary>
 /// <param name="rclone">Service for executing Rclone commands.</param>
 /// <param name="googleApi">Service for direct Google Drive API interactions.</param>
 /// <param name="localizer">Service for localized string retrieval.</param>
-public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService googleApi, ITranslationService localizer) : ISyncConsolidateStage
+/// <param name="metadataParser">Service for extracting metadata from JSON files.</param>
+public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService googleApi, ITranslationService localizer, IPromptMetadataParser metadataParser) : ISyncConsolidateStage
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
@@ -42,7 +42,7 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
             
             // Report consolidation progress to the user interface.
             var moveId = Guid.NewGuid();
-            uiLogger.Report(new SyncProgressEvent(moveId, $"    {string.Format(localizer["Log_Stage1_MovingOrphan"], remote.FriendlyName, dir.Id)}", false));
+            uiLogger.Report(new SyncProgressEvent(moveId, string.Format(localizer["Log_Stage1_MovingOrphan"], remote.FriendlyName, dir.Id), false, LogEntryType.System, 1));
             
             string sourcePath = $"{remote.RcloneRemote},root_folder_id={dir.Id}:";
             string destPath = $"{remote.RcloneRemote},root_folder_id={targetId}:";
@@ -76,12 +76,15 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
                         Logger.Info("Intra-drive name collision detected for conversation: '{FileName}'. Inspecting identity...", file.Name);
                        
                         var deepId = Guid.NewGuid();
-                        uiLogger.Report(new SyncProgressEvent(deepId, $"    {string.Format(localizer["Log_Stage1_DeepInspect"], remote.FriendlyName, file.Name)}", false));
+                        uiLogger.Report(new SyncProgressEvent(deepId, string.Format(localizer["Log_Stage1_DeepInspect"], remote.FriendlyName, file.Name), false, LogEntryType.Inspect, 1));
                         
                         try
                         {
-                            string? orphanTime = await ExtractCreateTimeAsync(remote.RcloneRemote, dir.Id, file.Name, cancellationToken);
-                            string? targetTime = await ExtractCreateTimeAsync(remote.RcloneRemote, targetId, existingFile.Name, cancellationToken);
+                            string jsonContentOrphan = await rclone.ReadFileContentAsync(remote.RcloneRemote, dir.Id, file.Name, cancellationToken);
+                            string? orphanTime = metadataParser.ExtractCreateTime(jsonContentOrphan);
+                            
+                            string jsonContentTarget = await rclone.ReadFileContentAsync(remote.RcloneRemote, targetId, existingFile.Name, cancellationToken);
+                            string? targetTime = metadataParser.ExtractCreateTime(jsonContentTarget);
                             
                             bool isSameIdentity = orphanTime is not null && orphanTime == targetTime;
 
@@ -156,40 +159,5 @@ public class SyncConsolidateStage(IRcloneService rclone, IGoogleDriveApiService 
 
             uiLogger.Report(new SyncProgressEvent(moveId, "", true));
         }
-    }
-
-    /// <summary>
-    /// Extracts the original creation time from a conversation JSON file to assist in identity matching.
-    /// </summary>
-    private async Task<string?> ExtractCreateTimeAsync(string remoteName, string folderId, string fileName, CancellationToken cancellationToken)
-    {
-        // Fail-Fast for infrastructure: We do not catch I/O or network exceptions here (e.g., Rclone timeouts).
-        // These errors must propagate to the caller to prevent 'Identity Mismatch' false positives
-        // during consolidation.
-        string jsonContent = await rclone.ReadFileContentAsync(remoteName, folderId, fileName, cancellationToken);
-        if (string.IsNullOrWhiteSpace(jsonContent)) return null;
-        
-        try
-        {
-            using var doc = JsonDocument.Parse(jsonContent);
-            if (doc.RootElement.TryGetProperty("chunkedPrompt", out var chunkedPrompt) && 
-                chunkedPrompt.TryGetProperty("chunks", out var chunks) && 
-                chunks.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var chunk in chunks.EnumerateArray())
-                {
-                    if (chunk.TryGetProperty("createTime", out var timeElement)) 
-                    {
-                        return timeElement.GetString();
-                    }
-                }
-            }
-        }
-        catch (JsonException ex) 
-        { 
-            // Fallback to null is acceptable if the file was downloaded but the content is corrupted.
-            Logger.Warn(ex, "Failed to parse JSON for {FileName}. Treating as unknown identity.", fileName); 
-        }
-        return null;
     }
 }

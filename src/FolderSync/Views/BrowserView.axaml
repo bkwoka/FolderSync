@@ -112,93 +112,93 @@
         </Grid>
 
         <!-- LAYER 2: Sync Disruption Warning Overlay -->
-        <Border IsVisible="{Binding IsWarningModalVisible}" ZIndex="100" Background="#aa000000">
+        <Border IsVisible="{Binding RenameDialog.IsWarningModalVisible}" ZIndex="100" Background="#aa000000">
             <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="25" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="450" MaxWidth="550">
                 <StackPanel Spacing="15">
                     <TextBlock Text="{i18N:Localize Warn_SyncTitle}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextMuted}"/>
                     <Border Background="{StaticResource BgApp}" BorderBrush="{StaticResource BgBorder}" BorderThickness="1" Padding="15" CornerRadius="4">
                         <TextBlock Text="{i18N:Localize Warn_SyncDesc}" TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource TextMuted}"/>
                     </Border>
-                    <CheckBox IsChecked="{Binding SkipWarningCheckbox}" Content="{i18N:Localize Checkbox_DontShow}" Foreground="{StaticResource TextMuted}"/>
+                    <CheckBox IsChecked="{Binding RenameDialog.SkipWarningCheckbox}" Content="{i18N:Localize Checkbox_DontShow}" Foreground="{StaticResource TextMuted}"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" >
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelRenameCommand}" Classes="outline"/>
-                        <Button Content="{i18N:Localize Btn_Continue}" Command="{Binding ContinueToInputCommand}" Classes="solid"/>
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding RenameDialog.CancelRenameCommand}" Classes="outline"/>
+                        <Button Content="{i18N:Localize Btn_Continue}" Command="{Binding RenameDialog.ContinueToInputCommand}" Classes="solid"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
         </Border>
 
         <!-- LAYER 3: Resource Rename Interaction Dialog -->
-        <Border IsVisible="{Binding IsInputModalVisible}" ZIndex="100" Background="#aa000000">
+        <Border IsVisible="{Binding RenameDialog.IsInputModalVisible}" ZIndex="100" Background="#aa000000">
             <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="500">
                 <StackPanel Spacing="15">
                     <TextBlock Text="{i18N:Localize Rename_Title}" FontSize="20" FontWeight="Bold" Margin="0" Foreground="{StaticResource TextMuted}"/>
-                    <TextBox Text="{Binding NewFileName}" MaxLength="80" Watermark="{i18N:Localize Rename_Label}" 
+                    <TextBox Text="{Binding RenameDialog.NewFileName}" MaxLength="80" Watermark="{i18N:Localize Rename_Label}" 
                              Background="{StaticResource BgApp}" Foreground="{StaticResource TextMuted}" 
                              VerticalAlignment="Center"
-                             IsEnabled="{Binding !IsRenaming}"/>
+                             IsEnabled="{Binding !RenameDialog.IsRenaming}"/>
 
-                    <Border Background="#33E05C5C" BorderBrush="{StaticResource AccentRed}" BorderThickness="1" CornerRadius="4" Padding="12" IsVisible="{Binding HasRenameError}">
+                    <Border Background="#33E05C5C" BorderBrush="{StaticResource AccentRed}" BorderThickness="1" CornerRadius="4" Padding="12" IsVisible="{Binding RenameDialog.HasRenameError}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <PathIcon Data="M12 5.99L19.53 19H4.47L12 5.99M12 2L1 21H23L12 2ZM13 16H11V18H13V16ZM13 10H11V15H13V10Z" Width="16" Height="16" Foreground="{StaticResource AccentRed}"/>
-                            <TextBlock Text="{Binding RenameErrorMessage}" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" FontSize="13" VerticalAlignment="Center" MaxWidth="400"/>
+                            <TextBlock Text="{Binding RenameDialog.RenameErrorMessage}" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" FontSize="13" VerticalAlignment="Center" MaxWidth="400"/>
                         </StackPanel>
                     </Border>
 
-                    <StackPanel IsVisible="{Binding IsRenaming}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center">
+                    <StackPanel IsVisible="{Binding RenameDialog.IsRenaming}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center">
                         <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentBlue}" Width="100" VerticalAlignment="Center"/>
                         <TextBlock Text="{i18N:Localize Status_CheckingCloud}" Foreground="{StaticResource TextMuted}" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsEnabled="{Binding !IsRenaming}">
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelRenameCommand}" Classes="outline"/>
-                        <Button Content="{i18N:Localize Btn_SaveChanges}" Command="{Binding ConfirmRenameCommand}" Classes="solid"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsEnabled="{Binding !RenameDialog.IsRenaming}">
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding RenameDialog.CancelRenameCommand}" Classes="outline"/>
+                        <Button Content="{i18N:Localize Btn_SaveChanges}" Command="{Binding RenameDialog.ConfirmRenameCommand}" Classes="solid"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
         </Border>
 
         <!-- LAYER 4: Destruction Management (Conversation and Attachments) -->
-        <Border IsVisible="{Binding IsDeleteModalVisible}" ZIndex="100" Background="#aa000000">
+        <Border IsVisible="{Binding DeleteDialog.IsDeleteModalVisible}" ZIndex="100" Background="#aa000000">
             <Border Background="{StaticResource BgPanel}" CornerRadius="8" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="550" MaxWidth="600">
                 <StackPanel Spacing="15">
                     
                     <TextBlock Text="{i18N:Localize Delete_Title}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextMuted}"/>
                     
-                    <Border Background="#22E05C5C" BorderBrush="{StaticResource AccentRed}" BorderThickness="1" Padding="15" CornerRadius="4" IsVisible="{Binding ShowDeleteSyncWarning}">
+                    <Border Background="#22E05C5C" BorderBrush="{StaticResource AccentRed}" BorderThickness="1" Padding="15" CornerRadius="4" IsVisible="{Binding DeleteDialog.ShowDeleteSyncWarning}">
                         <StackPanel Spacing="10">
                             <TextBlock Text="{i18N:Localize Delete_SyncWarn}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMuted}"/>
-                            <CheckBox IsChecked="{Binding SkipDeleteWarningCheckbox}" Content="{i18N:Localize Checkbox_DontShow}" FontSize="13" Foreground="{StaticResource TextMuted}"/>
+                            <CheckBox IsChecked="{Binding DeleteDialog.SkipDeleteWarningCheckbox}" Content="{i18N:Localize Checkbox_DontShow}" FontSize="13" Foreground="{StaticResource TextMuted}"/>
                         </StackPanel>
                     </Border>
 
                     <TextBlock Text="{i18N:Localize Delete_Target}" Foreground="{StaticResource TextMuted}" Margin="0,8,0,-8"/>
-                    <TextBlock Text="{Binding DeleteTargetName}" FontWeight="Bold" FontSize="16" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DeleteDialog.DeleteTargetName}" FontWeight="Bold" FontSize="16" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
 
                     <TextBlock Text="{i18N:Localize Delete_AttachmentLabel}" Foreground="{StaticResource TextMuted}" Margin="0,10,0,-10"/>
-                    <ToggleSwitch IsChecked="{Binding DeleteAttachmentsToggle}" 
+                    <ToggleSwitch IsChecked="{Binding DeleteDialog.DeleteAttachmentsToggle}" 
                                    OnContent="{i18N:Localize Delete_AttachOn}" 
                                    OffContent="{i18N:Localize Delete_AttachOff}"
                                    Foreground="{StaticResource TextMuted}"
                                    FontWeight="SemiBold"
-                                   IsEnabled="{Binding !IsDeleting}"/>
+                                   IsEnabled="{Binding !DeleteDialog.IsDeleting}"/>
 
                     <Border Background="{StaticResource BgApp}" BorderBrush="#E0A95C" BorderThickness="1" Padding="12" CornerRadius="4" Margin="0,0,0,0"
-                            IsVisible="{Binding DeleteAttachmentsToggle}">
+                            IsVisible="{Binding DeleteDialog.DeleteAttachmentsToggle}">
                         <Grid ColumnDefinitions="Auto, *">
                             <PathIcon Grid.Column="0" Data="M12 5.99L19.53 19H4.47L12 5.99M12 2L1 21H23L12 2ZM13 16H11V18H13V16ZM13 10H11V15H13V10Z" Width="16" Height="16" Foreground="#E0A95C" VerticalAlignment="Top" Margin="0,2,10,0"/>
                             <TextBlock Grid.Column="1" Text="{i18N:Localize Delete_TrashWarn}" TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource TextMuted}"/>
                         </Grid>
                     </Border>
 
-                    <StackPanel IsVisible="{Binding IsDeleting}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center" Margin="0,0, 0, 10">
+                    <StackPanel IsVisible="{Binding DeleteDialog.IsDeleting}" Orientation="Horizontal" Spacing="15" HorizontalAlignment="Center" Margin="0,0, 0, 10">
                         <ProgressBar IsIndeterminate="True" Foreground="{StaticResource AccentRed}" Width="100" VerticalAlignment="Center"/>
                         <TextBlock Text="{i18N:Localize Delete_Loading}" Foreground="{StaticResource TextMuted}" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsEnabled="{Binding !IsDeleting}">
-                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding CancelDeleteCommand}" Classes="outline"/>
-                        <Button Content="{i18N:Localize Btn_ConfirmDelete}" Command="{Binding ConfirmDeleteCommand}" Classes="solid" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" IsEnabled="{Binding !DeleteDialog.IsDeleting}">
+                        <Button Content="{i18N:Localize Btn_Cancel}" Command="{Binding DeleteDialog.CancelDeleteCommand}" Classes="outline"/>
+                        <Button Content="{i18N:Localize Btn_ConfirmDelete}" Command="{Binding DeleteDialog.ConfirmDeleteCommand}" Classes="solid" />
                     </StackPanel>
                 </StackPanel>
             </Border>

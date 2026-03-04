@@ -30,7 +30,7 @@ public class SyncEngine(
         if (remotes == null || remotes.Count < 2)
         {
             var errId = Guid.NewGuid();
-            uiLogger.Report(new SyncProgressEvent(errId, $"⚠️ {localizer["Error_NeedTwoDrives"]}", false));
+            uiLogger.Report(new SyncProgressEvent(errId, localizer["Error_NeedTwoDrives"], false, LogEntryType.Warning));
             uiLogger.Report(new SyncProgressEvent(errId, "", true));
             progressUpdater.Report(100);
             return;
@@ -67,7 +67,7 @@ public class SyncEngine(
                 // Task-level indentation for per-drive status reporting.
                 var taskId = Guid.NewGuid();
                 uiLogger.Report(new SyncProgressEvent(taskId,
-                    $"    {string.Format(localizer["Log_Stage0_Sanitize"], remote.FriendlyName)}", false));
+                    string.Format(localizer["Log_Stage0_Sanitize"], remote.FriendlyName), false, LogEntryType.Normal, 1));
                 await sanitizeStage.RunAsync(remote, uiLogger, cancellationToken);
                 uiLogger.Report(new SyncProgressEvent(taskId, "", true)); // Stop progress indicator.
                 AdvanceProgress();
@@ -75,7 +75,7 @@ public class SyncEngine(
                 cancellationToken.ThrowIfCancellationRequested();
                 var consId = Guid.NewGuid();
                 uiLogger.Report(new SyncProgressEvent(consId,
-                    $"    {string.Format(localizer["Log_Stage1_Consolidate"], remote.FriendlyName)}", false));
+                    string.Format(localizer["Log_Stage1_Consolidate"], remote.FriendlyName), false, LogEntryType.Normal, 1));
                 await consolidateStage.RunAsync(remote, uiLogger, cancellationToken);
                 uiLogger.Report(new SyncProgressEvent(consId, "", true)); // Stop task animation.
                 AdvanceProgress();

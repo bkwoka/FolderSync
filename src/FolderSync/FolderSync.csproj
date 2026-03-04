@@ -10,7 +10,7 @@
         <PublishSingleFile>true</PublishSingleFile>
         <SelfContained>true</SelfContained>
         <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-        <Version>0.1.5</Version>
+        <Version>0.1.6</Version>
         <AssemblyVersion>$(Version)</AssemblyVersion>
         <FileVersion>$(Version)</FileVersion>
         <InformationalVersion>$(Version)</InformationalVersion>
@@ -38,6 +38,7 @@
         <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
         <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.0.0" />
         <PackageReference Include="NLog" Version="5.3.4" />
+        <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.3" />
     </ItemGroup>
     
 </Project>

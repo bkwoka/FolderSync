@@ -82,7 +82,7 @@ public class FoundationGapTests : IDisposable
         // Arrange
         var mockRclone = new Mock<IRcloneService>();
         var mockGoogleApi = new Mock<IGoogleDriveApiService>();
-        var sut = new DeleteOrchestratorService(mockRclone.Object, mockGoogleApi.Object);
+        var sut = new DeleteOrchestratorService(mockRclone.Object, mockGoogleApi.Object, new PromptMetadataParser());
 
         var r = new RemoteInfo("M", "rm", "f1");
         var list = new List<RemoteInfo> { r };
